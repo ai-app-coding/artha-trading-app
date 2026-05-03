@@ -1,0 +1,1145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>Artha Trading App</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Bebas+Neue&display=swap" rel="stylesheet"/>
+<style>
+/* ============================================================
+   DESIGN SYSTEM — industrial terminal aesthetic
+   Dark green-black with amber accents. Bloomberg meets CLI.
+   ============================================================ */
+:root {
+  --bg:       #080b08;
+  --surface:  #0d110d;
+  --card:     #111611;
+  --card2:    #151c15;
+  --border:   #1a241a;
+  --border2:  #223022;
+  --text:     #d4ddd4;
+  --muted:    #4a5e4a;
+  --dim:      #1e2a1e;
+  --green:    #39ff5a;
+  --green2:   #00c93a;
+  --green-bg: #061208;
+  --green-bd: #0d2e14;
+  --amber:    #ffb830;
+  --amber-bg: #120e02;
+  --amber-bd: #2e2206;
+  --red:      #ff4040;
+  --red-bg:   #120404;
+  --red-bd:   #2e0808;
+  --blue:     #3db8ff;
+  --blue-bg:  #020d14;
+  --blue-bd:  #061e2e;
+  --font:     'IBM Plex Mono', monospace;
+  --display:  'Bebas Neue', sans-serif;
+  --radius:   6px;
+  --radius-lg:10px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px;-webkit-font-smoothing:antialiased;}
+
+/* SCROLLBAR */
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-track{background:var(--bg);}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+
+/* LAYOUT */
+.app{display:flex;flex-direction:column;min-height:100vh;}
+
+/* TOPBAR */
+.topbar{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;flex-wrap:wrap;gap:8px;}
+.logo{font-family:var(--display);font-size:26px;color:var(--green);letter-spacing:2px;line-height:1;}
+.logo-sub{font-size:10px;color:var(--muted);letter-spacing:.15em;text-transform:uppercase;}
+.topbar-right{display:flex;align-items:center;gap:12px;margin-left:auto;flex-wrap:wrap;}
+.live-pill{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--green);border:1px solid var(--green-bd);background:var(--green-bg);padding:3px 8px;border-radius:20px;}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:blink 2s infinite;}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.clock{font-size:11px;color:var(--muted);}
+.api-status{font-size:10px;padding:3px 8px;border-radius:20px;border:1px solid var(--border2);color:var(--muted);}
+.api-status.set{border-color:var(--green-bd);color:var(--green);background:var(--green-bg);}
+
+/* SETUP BANNER */
+.setup-banner{background:var(--amber-bg);border-bottom:1px solid var(--amber-bd);padding:10px 16px;font-size:12px;color:var(--amber);display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.setup-banner input{background:var(--card);border:1px solid var(--amber-bd);border-radius:var(--radius);padding:5px 10px;font-family:var(--font);font-size:12px;color:var(--text);flex:1;min-width:200px;}
+.setup-banner input:focus{outline:none;border-color:var(--amber);}
+.btn-sm{padding:5px 12px;border-radius:var(--radius);font-family:var(--font);font-size:11px;font-weight:600;cursor:pointer;border:1px solid;transition:all .15s;white-space:nowrap;}
+.btn-amber{background:var(--amber);color:#000;border-color:var(--amber);}
+.btn-amber:hover{background:#ffc84a;}
+
+/* MAIN CONTENT */
+.content{display:flex;flex:1;overflow:hidden;}
+
+/* SIDEBAR */
+.sidebar{width:280px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;}
+.sidebar-section{padding:14px 16px;border-bottom:1px solid var(--border);}
+.sec-label{font-size:9px;color:var(--muted);letter-spacing:.18em;text-transform:uppercase;margin-bottom:10px;}
+
+/* DAY SELECTOR */
+.day-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;}
+.day-btn{background:var(--card);border:1px solid var(--border2);border-radius:var(--radius);padding:6px 2px;font-family:var(--font);font-size:9px;color:var(--muted);cursor:pointer;text-align:center;transition:all .15s;line-height:1.4;}
+.day-btn:hover{border-color:var(--green);color:var(--green);}
+.day-btn.active{background:var(--green-bg);border-color:var(--green);color:var(--green);}
+.day-btn .day-name{font-weight:600;font-size:10px;}
+.day-btn .day-date{font-size:9px;}
+.day-btn .day-cat{font-size:8px;margin-top:1px;opacity:.7;}
+
+/* TICKER */
+.ticker-row{display:flex;gap:4px;}
+.ticker-btn{flex:1;background:var(--card);border:1px solid var(--border2);border-radius:var(--radius);padding:6px 4px;font-family:var(--font);font-size:11px;font-weight:600;color:var(--muted);cursor:pointer;text-align:center;transition:all .15s;}
+.ticker-btn:hover{border-color:var(--blue);color:var(--blue);}
+.ticker-btn.active{background:var(--blue-bg);border-color:var(--blue);color:var(--blue);}
+
+/* INPUTS */
+.inp-row{margin-bottom:8px;}
+.inp-label{font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:3px;display:flex;justify-content:space-between;align-items:center;}
+.inp-hint{color:var(--green);font-size:9px;font-weight:600;}
+.inp{background:var(--card);border:1px solid var(--border2);border-radius:var(--radius);padding:8px 10px;font-family:var(--font);font-size:13px;color:var(--text);width:100%;transition:border-color .2s;}
+.inp:focus{outline:none;border-color:var(--green);}
+.inp::placeholder{color:var(--muted);}
+.inp-2col{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.inp-computed{background:var(--dim);border:1px solid var(--border);border-radius:var(--radius);padding:8px 10px;font-size:13px;color:var(--green);font-weight:600;}
+.mode-badge{font-size:9px;padding:2px 7px;border-radius:10px;border:1px solid;font-weight:600;}
+
+/* ACCOUNT */
+.account-row{display:flex;align-items:center;gap:6px;}
+.account-row .inp{flex:1;}
+
+/* BUTTONS */
+.analyze-btn{width:100%;padding:14px;background:var(--green);color:#000;border:none;border-radius:var(--radius);font-family:var(--display);font-size:20px;letter-spacing:2px;cursor:pointer;transition:all .2s;margin-top:4px;}
+.analyze-btn:hover{background:var(--green2);transform:translateY(-1px);}
+.analyze-btn:active{transform:translateY(0);}
+.analyze-btn:disabled{background:var(--dim);color:var(--muted);cursor:not-allowed;transform:none;}
+.reset-btn{width:100%;padding:8px;background:transparent;border:1px solid var(--border2);color:var(--muted);border-radius:var(--radius);font-family:var(--font);font-size:11px;cursor:pointer;margin-top:6px;transition:all .15s;}
+.reset-btn:hover{border-color:var(--border);color:var(--text);}
+
+/* MAIN PANEL */
+.main{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;}
+
+/* WELCOME */
+.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:400px;gap:16px;text-align:center;padding:40px 20px;}
+.welcome-logo{font-family:var(--display);font-size:64px;color:var(--green);letter-spacing:4px;line-height:1;}
+.welcome-title{font-size:13px;color:var(--muted);letter-spacing:.2em;text-transform:uppercase;}
+.welcome-steps{display:flex;flex-direction:column;gap:8px;margin-top:12px;text-align:left;width:100%;max-width:360px;}
+.w-step{display:flex;align-items:flex-start;gap:10px;font-size:12px;color:var(--muted);padding:6px 0;border-bottom:1px solid var(--border);}
+.w-step:last-child{border:none;}
+.w-num{color:var(--green);font-weight:600;min-width:16px;}
+.auto-tag{font-size:9px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd);padding:1px 6px;border-radius:10px;margin-left:6px;}
+
+/* LOADING */
+.loading{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:400px;gap:20px;}
+.spinner{width:36px;height:36px;border:2px solid var(--border2);border-top-color:var(--green);border-radius:50%;animation:spin 1s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-title{font-family:var(--display);font-size:28px;color:var(--green);letter-spacing:3px;}
+.loading-steps{width:100%;max-width:440px;}
+.l-step{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:var(--radius);font-size:11px;color:var(--muted);transition:all .3s;margin-bottom:3px;}
+.l-step.active{background:var(--card);color:var(--text);border:1px solid var(--border2);}
+.l-step.done{color:var(--green);}
+.l-icon{width:16px;text-align:center;font-size:12px;flex-shrink:0;}
+
+/* VERDICT */
+.verdict{border-radius:var(--radius-lg);padding:16px 18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+.verdict.GO{background:var(--green-bg);border:1px solid var(--green);}
+.verdict.WAIT{background:var(--amber-bg);border:1px solid var(--amber);}
+.verdict.SKIP{background:var(--red-bg);border:1px solid var(--red);}
+.v-word{font-family:var(--display);font-size:52px;letter-spacing:3px;line-height:1;min-width:110px;}
+.verdict.GO .v-word{color:var(--green);}
+.verdict.WAIT .v-word{color:var(--amber);}
+.verdict.SKIP .v-word{color:var(--red);}
+.v-body{flex:1;min-width:200px;}
+.v-title{font-size:14px;font-weight:600;margin-bottom:4px;color:var(--text);}
+.v-sub{font-size:12px;color:var(--muted);line-height:1.5;}
+.v-time{font-size:10px;color:var(--muted);margin-left:auto;}
+
+/* CONTRACTS BADGE */
+.contracts-badge{background:var(--green-bg);border:1px solid var(--green-bd);border-radius:var(--radius);padding:10px 14px;display:flex;align-items:center;gap:10px;}
+.cb-num{font-family:var(--display);font-size:32px;color:var(--green);line-height:1;}
+.cb-label{font-size:11px;color:var(--muted);line-height:1.4;}
+.cb-risk{font-size:10px;color:var(--green);}
+
+/* TABS */
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);overflow-x:auto;}
+.tab{padding:8px 14px;font-size:11px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;white-space:nowrap;font-family:var(--font);background:transparent;border-top:none;border-left:none;border-right:none;}
+.tab:hover{color:var(--text);}
+.tab.active{color:var(--green);border-bottom-color:var(--green);}
+.tab-pane{display:none;}
+.tab-pane.active{display:block;}
+
+/* CARDS */
+.g-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;}
+.g-card+.g-card{margin-top:10px;}
+.card-title{font-size:9px;color:var(--muted);letter-spacing:.15em;text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.card-title-accent{color:var(--green);}
+
+/* METRICS GRID */
+.metrics-4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;}
+.metrics-2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.metric{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;}
+.m-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px;}
+.m-val{font-size:18px;font-weight:600;color:var(--text);}
+.m-val.green{color:var(--green);}
+.m-val.red{color:var(--red);}
+.m-val.amber{color:var(--amber);}
+.m-val.blue{color:var(--blue);}
+.m-sub{font-size:9px;color:var(--muted);margin-top:2px;}
+
+/* TRADE TABLE */
+.t-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;}
+.t-row:last-child{border:none;}
+.t-label{color:var(--muted);}
+.t-val{font-weight:600;color:var(--text);}
+.t-val.green{color:var(--green);}
+.t-val.red{color:var(--red);}
+.t-val.amber{color:var(--amber);}
+.t-val.blue{color:var(--blue);}
+
+/* TAGS */
+.tags{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;}
+.tag{font-size:10px;font-weight:600;padding:3px 8px;border-radius:4px;}
+.tag.green{background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd);}
+.tag.red{background:var(--red-bg);color:var(--red);border:1px solid var(--red-bd);}
+.tag.amber{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-bd);}
+.tag.blue{background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-bd);}
+
+/* REASONING */
+.reasoning{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;font-size:12px;color:var(--muted);line-height:1.7;}
+.reasoning strong{color:var(--text);font-weight:600;}
+
+/* FRAMEWORK GRID */
+.fw-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.fw-item{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:8px 10px;display:flex;align-items:flex-start;gap:8px;}
+.fw-num{font-family:var(--display);font-size:18px;color:var(--muted);line-height:1;min-width:20px;}
+.fw-body{flex:1;}
+.fw-name{font-size:11px;font-weight:600;color:var(--text);margin-bottom:2px;}
+.fw-note{font-size:10px;color:var(--muted);line-height:1.4;}
+.fw-sig{font-size:9px;font-weight:600;padding:2px 6px;border-radius:3px;margin-top:4px;display:inline-block;}
+.fw-sig.bull{background:var(--green-bg);color:var(--green);}
+.fw-sig.bear{background:var(--red-bg);color:var(--red);}
+.fw-sig.neut{background:var(--amber-bg);color:var(--amber);}
+
+/* NEWS */
+.news-item{padding:8px 0;border-bottom:1px solid var(--border);}
+.news-item:last-child{border:none;}
+.news-hl{font-size:12px;color:var(--text);margin-bottom:4px;line-height:1.4;}
+.news-detail{font-size:11px;color:var(--muted);line-height:1.4;}
+.news-impact{font-size:9px;font-weight:600;padding:2px 7px;border-radius:3px;display:inline-block;margin-right:6px;}
+
+/* CHECKLIST */
+.cl-item{display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px;}
+.cl-item:last-child{border:none;}
+.cl-time{color:var(--green);font-weight:600;min-width:60px;flex-shrink:0;font-size:11px;}
+.cl-check{width:14px;height:14px;border:1px solid var(--border2);border-radius:3px;flex-shrink:0;margin-top:1px;cursor:pointer;transition:all .15s;}
+.cl-check:hover{border-color:var(--green);}
+.cl-check.checked{background:var(--green);border-color:var(--green);}
+.cl-text{color:var(--muted);line-height:1.4;flex:1;}
+
+/* MID-TRADE */
+.mid-trade-panel{background:var(--amber-bg);border:1px solid var(--amber-bd);border-radius:var(--radius-lg);padding:14px 16px;}
+.mid-title{font-family:var(--display);font-size:20px;color:var(--amber);letter-spacing:2px;margin-bottom:10px;}
+.theta-bar{height:8px;background:var(--dim);border-radius:4px;margin:8px 0;overflow:hidden;}
+.theta-fill{height:100%;border-radius:4px;background:var(--amber);transition:width .5s;}
+.mid-verdict{font-family:var(--display);font-size:28px;letter-spacing:2px;margin-top:10px;}
+.mid-verdict.hold{color:var(--green);}
+.mid-verdict.profit{color:var(--amber);}
+.mid-verdict.exit{color:var(--red);}
+
+/* JOURNAL */
+.j-header-row{display:grid;grid-template-columns:55px 55px 55px 1fr 55px 60px;gap:6px;padding:5px 0;border-bottom:1px solid var(--border2);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;}
+.j-data-row{display:grid;grid-template-columns:55px 55px 55px 1fr 55px 60px;gap:6px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px;align-items:center;}
+.j-win{color:var(--green);}
+.j-loss{color:var(--red);}
+.j-empty{text-align:center;padding:30px;color:var(--muted);font-size:12px;}
+
+/* PERSONAL BACKTEST */
+.backtest-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
+.bt-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;text-align:center;}
+.bt-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;}
+.bt-val{font-size:20px;font-weight:600;}
+.bt-sub{font-size:9px;color:var(--muted);margin-top:3px;}
+.pattern-item{padding:7px 0;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted);line-height:1.4;}
+.pattern-item:last-child{border:none;}
+.pattern-item strong{color:var(--amber);}
+
+/* LOG TRADE FORM */
+.log-form{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end;}
+.log-btn{padding:8px 14px;background:var(--blue-bg);border:1px solid var(--blue-bd);color:var(--blue);border-radius:var(--radius);font-family:var(--font);font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .15s;}
+.log-btn:hover{background:var(--blue);color:#000;}
+.export-btn{padding:6px 12px;background:transparent;border:1px solid var(--border2);color:var(--muted);border-radius:var(--radius);font-family:var(--font);font-size:10px;cursor:pointer;transition:all .15s;}
+.export-btn:hover{border-color:var(--green);color:var(--green);}
+
+/* ERROR */
+.error-box{background:var(--red-bg);border:1px solid var(--red-bd);border-radius:var(--radius);padding:14px;font-size:12px;color:var(--red);line-height:1.6;}
+
+/* MOBILE */
+@media(max-width:680px){
+  .content{flex-direction:column;}
+  .sidebar{width:100%;border-right:none;border-bottom:1px solid var(--border);}
+  .metrics-4{grid-template-columns:1fr 1fr;}
+  .fw-grid{grid-template-columns:1fr;}
+  .log-form{grid-template-columns:1fr 1fr;grid-template-rows:auto auto;}
+  .log-btn{grid-column:span 2;}
+  .j-header-row,.j-data-row{grid-template-columns:45px 45px 45px 1fr 45px 50px;font-size:10px;}
+  .v-word{font-size:40px;}
+  .topbar{gap:6px;}
+}
+@media(max-width:420px){
+  .metrics-4{grid-template-columns:1fr 1fr;}
+  .metrics-2{grid-template-columns:1fr;}
+  .day-grid{grid-template-columns:repeat(5,1fr);}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div>
+    <div class="logo">ARTHA</div>
+    <div class="logo-sub">Artha · Smart Options Analyzer</div>
+  </div>
+  <div class="topbar-right">
+    <div class="live-pill"><div class="live-dot"></div>LIVE</div>
+    <div class="clock" id="clock">--:-- CT</div>
+    <div class="api-status" id="apiStatus">API key not set</div>
+  </div>
+</div>
+
+<!-- SETUP BANNER -->
+<div class="setup-banner" id="setupBanner">
+  <span>⚡ Enter your Anthropic API key to activate AI analysis:</span>
+  <input type="password" id="apiKeyInput" placeholder="sk-ant-api03-..." autocomplete="off"/>
+  <button class="btn-sm btn-amber" onclick="saveApiKey()">Save Key</button>
+  <span style="font-size:10px;opacity:.7;">Key stored locally · Never sent anywhere except Anthropic API</span>
+</div>
+
+<!-- MAIN BODY -->
+<div class="content">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+
+    <!-- TICKER -->
+    <div class="sidebar-section">
+      <div class="sec-label">Ticker</div>
+      <div class="ticker-row" id="tickerRow">
+        <div class="ticker-btn active" data-ticker="IWM">IWM</div>
+        <div class="ticker-btn" data-ticker="SPY">SPY</div>
+        <div class="ticker-btn" data-ticker="QQQ">QQQ</div>
+      </div>
+    </div>
+
+    <!-- DAY -->
+    <div class="sidebar-section">
+      <div class="sec-label">Trade day</div>
+      <div class="day-grid" id="dayGrid">
+        <div class="day-btn active" data-day="MON 5/4" data-cat="ISM">
+          <div class="day-name">MON</div><div class="day-date">5/4</div><div class="day-cat">ISM</div>
+        </div>
+        <div class="day-btn" data-day="TUE 5/5" data-cat="JOLTS">
+          <div class="day-name">TUE</div><div class="day-date">5/5</div><div class="day-cat">JOLTS</div>
+        </div>
+        <div class="day-btn" data-day="WED 5/6" data-cat="FOMC⚡">
+          <div class="day-name">WED</div><div class="day-date">5/6</div><div class="day-cat">FOMC⚡</div>
+        </div>
+        <div class="day-btn" data-day="THU 5/7" data-cat="Claims">
+          <div class="day-name">THU</div><div class="day-date">5/7</div><div class="day-cat">Claims</div>
+        </div>
+        <div class="day-btn" data-day="FRI 5/8" data-cat="NFP⚡">
+          <div class="day-name">FRI</div><div class="day-date">5/8</div><div class="day-cat">NFP⚡</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MARKET MODE (auto-detected) -->
+    <div class="sidebar-section">
+      <div class="sec-label">Market mode <span class="mode-badge" id="modeBadge" style="border-color:var(--amber);color:var(--amber);">PRE-MARKET</span></div>
+      <div style="font-size:10px;color:var(--muted);line-height:1.5;" id="modeDesc">Pre-market analysis mode. Option prices not needed yet — check back after 8:30 CT.</div>
+    </div>
+
+    <!-- PRICE DATA -->
+    <div class="sidebar-section">
+      <div class="sec-label">Live price data</div>
+      <div class="inp-row">
+        <div class="inp-label"><span id="tickerLabel">IWM</span> price <span class="inp-hint" id="strikeHint"></span></div>
+        <input class="inp" id="price" placeholder="e.g. 278.42" type="number" step="0.01" oninput="onPriceChange()"/>
+      </div>
+      <div class="inp-row">
+        <div class="inp-label">VIX level</div>
+        <input class="inp" id="vix" placeholder="e.g. 17.23" type="number" step="0.01"/>
+      </div>
+      <div class="inp-row">
+        <div class="inp-label">IV rank <span style="color:var(--muted);font-size:9px;">(0–100, from Tastytrade)</span></div>
+        <input class="inp" id="ivRank" placeholder="e.g. 35" type="number" step="1" min="0" max="100"/>
+      </div>
+    </div>
+
+    <!-- OPTION LEGS (hidden pre-market) -->
+    <div class="sidebar-section" id="optionLegsSection">
+      <div class="sec-label">Option legs <span style="color:var(--green);font-size:9px;" id="suggestedStrikes"></span></div>
+      <div class="inp-row">
+        <div class="inp-label">Long call bid / ask <span class="inp-hint" id="longStrikeLabel"></span></div>
+        <div class="inp-2col">
+          <input class="inp" id="longBid" placeholder="bid" type="number" step="0.01"/>
+          <input class="inp" id="longAsk" placeholder="ask" type="number" step="0.01"/>
+        </div>
+      </div>
+      <div class="inp-row">
+        <div class="inp-label">Short call bid / ask <span class="inp-hint" id="shortStrikeLabel"></span></div>
+        <div class="inp-2col">
+          <input class="inp" id="shortBid" placeholder="bid" type="number" step="0.01"/>
+          <input class="inp" id="shortAsk" placeholder="ask" type="number" step="0.01"/>
+        </div>
+      </div>
+      <div class="inp-row">
+        <div class="inp-label">Net debit (auto-calculated)</div>
+        <div class="inp-computed" id="netDebitDisplay">—</div>
+      </div>
+    </div>
+
+    <!-- ACCOUNT -->
+    <div class="sidebar-section">
+      <div class="sec-label">Account settings</div>
+      <div class="inp-row">
+        <div class="inp-label">Account size ($)</div>
+        <input class="inp" id="accountSize" placeholder="e.g. 10000" type="number" step="100" value="10000"/>
+      </div>
+      <div class="inp-row">
+        <div class="inp-label">Max risk per trade (%)</div>
+        <input class="inp" id="riskPct" placeholder="e.g. 2" type="number" step="0.5" value="2"/>
+      </div>
+    </div>
+
+    <!-- BUTTONS -->
+    <div class="sidebar-section" style="border:none;margin-top:auto;">
+      <button class="analyze-btn" id="analyzeBtn" onclick="runAnalysis()">ANALYZE</button>
+      <button class="reset-btn" onclick="resetApp()">↺ Reset</button>
+    </div>
+  </div><!-- /sidebar -->
+
+  <!-- MAIN PANEL -->
+  <div class="main" id="mainPanel">
+
+    <!-- WELCOME -->
+    <div id="stateWelcome">
+      <div class="welcome">
+        <div class="welcome-logo">ARTHA</div>
+        <div class="welcome-title">Smart Options Analyzer</div>
+        <div class="welcome-steps">
+          <div class="w-step"><span class="w-num">1</span>Select ticker + trade day</div>
+          <div class="w-step"><span class="w-num">2</span>Enter IWM price + VIX + IV rank</div>
+          <div class="w-step"><span class="w-num">3</span>Enter option leg bid/ask from broker</div>
+          <div class="w-step"><span class="w-num">4</span>Hit ANALYZE — news searched automatically<span class="auto-tag">AUTO</span></div>
+          <div class="w-step"><span class="w-num">5</span>Get GO / WAIT / SKIP with exact trade</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOADING -->
+    <div id="stateLoading" style="display:none;">
+      <div class="loading">
+        <div class="spinner"></div>
+        <div class="loading-title" id="loadTitle">ANALYZING</div>
+        <div class="loading-steps" id="loadSteps"></div>
+      </div>
+    </div>
+
+    <!-- RESULTS -->
+    <div id="stateResults" style="display:none;"></div>
+
+  </div><!-- /main -->
+
+</div><!-- /content -->
+</div><!-- /app -->
+
+<script>
+// ============================================================
+// STATE
+// ============================================================
+let selectedTicker = 'IWM';
+let selectedDay = 'MON 5/4';
+let apiKey = localStorage.getItem('iwm_apikey') || '';
+let isPreMarket = false;
+
+// ============================================================
+// STORAGE — swap localStorage → Supabase here later
+// To add Supabase: replace loadJournal() and saveJournal()
+// with Supabase client calls. Everything else stays the same.
+// ============================================================
+function loadJournal() {
+  try { return JSON.parse(localStorage.getItem('iwm_journal_v2') || '[]'); } catch(e){ return []; }
+}
+function saveJournal(j) {
+  localStorage.setItem('iwm_journal_v2', JSON.stringify(j));
+}
+
+// ============================================================
+// INIT
+// ============================================================
+window.addEventListener('DOMContentLoaded', () => {
+  initClock();
+  initDaySelector();
+  initTickerSelector();
+  checkApiKey();
+  updateMarketMode();
+  setInterval(updateMarketMode, 60000);
+  ['longBid','longAsk','shortBid','shortAsk'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', calcDebit);
+  });
+});
+
+// ============================================================
+// CLOCK
+// ============================================================
+function initClock() {
+  function tick() {
+    const t = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true,timeZone:'America/Chicago'});
+    document.getElementById('clock').textContent = t + ' CT';
+  }
+  tick(); setInterval(tick, 1000);
+}
+
+// ============================================================
+// MARKET MODE
+// ============================================================
+function updateMarketMode() {
+  const now = new Date();
+  const ct = new Date(now.toLocaleString('en-US',{timeZone:'America/Chicago'}));
+  const h = ct.getHours(), m = ct.getMinutes();
+  const totalMin = h * 60 + m;
+  const preOpen = totalMin < 8*60+30;
+  const afterClose = totalMin >= 15*60;
+  const badge = document.getElementById('modeBadge');
+  const desc = document.getElementById('modeDesc');
+  const optSection = document.getElementById('optionLegsSection');
+  if(preOpen) {
+    badge.textContent='PRE-MARKET'; badge.style.borderColor='var(--amber)'; badge.style.color='var(--amber)';
+    desc.textContent='Pre-market mode. Enter price + VIX for directional bias. Option legs not needed yet.';
+    if(optSection) optSection.style.opacity='.4';
+    isPreMarket = true;
+  } else if(afterClose) {
+    badge.textContent='CLOSED'; badge.style.borderColor='var(--muted)'; badge.style.color='var(--muted)';
+    desc.textContent='Market closed. You can still analyze for tomorrow\'s prep.';
+    if(optSection) optSection.style.opacity='1';
+    isPreMarket = false;
+  } else {
+    badge.textContent='MARKET OPEN'; badge.style.borderColor='var(--green)'; badge.style.color='var(--green)';
+    desc.textContent='Live trading mode. Enter all fields including option leg bid/ask from your broker.';
+    if(optSection) optSection.style.opacity='1';
+    isPreMarket = false;
+  }
+}
+
+// ============================================================
+// STRIKE AUTO-SUGGESTION
+// ============================================================
+function onPriceChange() {
+  const p = parseFloat(document.getElementById('price').value);
+  if(!p || isNaN(p)) { clearStrikeHints(); return; }
+  const atm = Math.round(p);
+  const long = atm;
+  const short = atm + 4;
+  document.getElementById('strikeHint').textContent = `→ look up $${long}C & $${short}C`;
+  document.getElementById('longStrikeLabel').textContent = `$${long} strike`;
+  document.getElementById('shortStrikeLabel').textContent = `$${short} strike`;
+  document.getElementById('suggestedStrikes').textContent = `Suggested: $${long}/$${short} spread`;
+  calcDebit();
+}
+function clearStrikeHints() {
+  ['strikeHint','longStrikeLabel','shortStrikeLabel','suggestedStrikes'].forEach(id => {
+    const el = document.getElementById(id); if(el) el.textContent='';
+  });
+}
+function calcDebit() {
+  const lb = parseFloat(document.getElementById('longBid')?.value);
+  const la = parseFloat(document.getElementById('longAsk')?.value);
+  const sb = parseFloat(document.getElementById('shortBid')?.value);
+  const sa = parseFloat(document.getElementById('shortAsk')?.value);
+  const el = document.getElementById('netDebitDisplay');
+  if(!el) return;
+  if([lb,la,sb,sa].some(isNaN)||[lb,la,sb,sa].some(v=>!v)) { el.textContent='—'; return; }
+  const debit = ((la + lb)/2) - ((sa + sb)/2);
+  el.textContent = debit > 0 ? `$${debit.toFixed(2)} / contract` : '—';
+}
+
+// ============================================================
+// SELECTORS
+// ============================================================
+function initDaySelector() {
+  document.getElementById('dayGrid').addEventListener('click', e => {
+    const btn = e.target.closest('.day-btn'); if(!btn) return;
+    document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedDay = btn.dataset.day;
+  });
+}
+function initTickerSelector() {
+  document.getElementById('tickerRow').addEventListener('click', e => {
+    const btn = e.target.closest('.ticker-btn'); if(!btn) return;
+    document.querySelectorAll('.ticker-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedTicker = btn.dataset.ticker;
+    document.getElementById('tickerLabel').textContent = selectedTicker;
+    clearStrikeHints();
+    document.getElementById('price').value='';
+  });
+}
+
+// ============================================================
+// API KEY
+// ============================================================
+function saveApiKey() {
+  const k = document.getElementById('apiKeyInput').value.trim();
+  if(!k.startsWith('sk-ant')) { alert('That doesn\'t look like an Anthropic API key. It should start with sk-ant-'); return; }
+  apiKey = k;
+  localStorage.setItem('iwm_apikey', k);
+  checkApiKey();
+  document.getElementById('apiKeyInput').value='';
+}
+function checkApiKey() {
+  const has = apiKey && apiKey.startsWith('sk-ant');
+  document.getElementById('setupBanner').style.display = has ? 'none' : 'flex';
+  const s = document.getElementById('apiStatus');
+  s.textContent = has ? 'API key active' : 'API key not set';
+  s.className = 'api-status' + (has ? ' set' : '');
+}
+
+// ============================================================
+// RESET
+// ============================================================
+function resetApp() {
+  ['price','vix','ivRank','longBid','longAsk','shortBid','shortAsk'].forEach(id => {
+    const el = document.getElementById(id); if(el) el.value='';
+  });
+  document.getElementById('netDebitDisplay').textContent='—';
+  clearStrikeHints();
+  show('stateWelcome');
+  document.getElementById('analyzeBtn').disabled = false;
+}
+
+// ============================================================
+// SHOW/HIDE STATES
+// ============================================================
+function show(id) {
+  ['stateWelcome','stateLoading','stateResults'].forEach(s => {
+    const el = document.getElementById(s);
+    if(el) el.style.display = s===id ? 'block' : 'none';
+  });
+}
+
+// ============================================================
+// LOADING ANIMATION
+// ============================================================
+const LOAD_STEPS = [
+  {icon:'◎', label:'Searching web for '+selectedTicker+' news & catalysts...'},
+  {icon:'◈', label:'Running technical analysis — RSI, MACD, key levels...'},
+  {icon:'◆', label:'Generating trade ideas for '+selectedDay+'...'},
+  {icon:'◇', label:'Converting news to trade signals...'},
+  {icon:'▣', label:'Checking backtest reference...'},
+  {icon:'◉', label:'Running portfolio risk & position sizing...'},
+  {icon:'◐', label:'Analyzing your personal trade journal patterns...'},
+  {icon:'★', label:'Synthesizing all 7 frameworks → final verdict...'},
+];
+async function animateLoading() {
+  const container = document.getElementById('loadSteps');
+  container.innerHTML = LOAD_STEPS.map((s,i)=>`
+    <div class="l-step pending" id="ls${i}">
+      <span class="l-icon">${s.icon}</span>
+      <span>${s.label}</span>
+    </div>`).join('');
+  for(let i=0;i<LOAD_STEPS.length;i++){
+    const el = document.getElementById(`ls${i}`);
+    el.classList.remove('pending'); el.classList.add('active');
+    await new Promise(r=>setTimeout(r,700));
+    el.classList.remove('active'); el.classList.add('done');
+    el.querySelector('.l-icon').textContent='✓';
+  }
+}
+
+// ============================================================
+// MAIN ANALYSIS
+// ============================================================
+async function runAnalysis() {
+  if(!apiKey) { alert('Please enter your Anthropic API key first.'); return; }
+  const price = parseFloat(document.getElementById('price').value);
+  const vix = parseFloat(document.getElementById('vix').value);
+  if(!price || !vix) { alert('Please enter at least the price and VIX.'); return; }
+
+  const ivRank = parseFloat(document.getElementById('ivRank').value)||null;
+  const lb = parseFloat(document.getElementById('longBid')?.value)||null;
+  const la = parseFloat(document.getElementById('longAsk')?.value)||null;
+  const sb = parseFloat(document.getElementById('shortBid')?.value)||null;
+  const sa = parseFloat(document.getElementById('shortAsk')?.value)||null;
+
+  const hasLegs = lb&&la&&sb&&sa;
+  const netDebit = hasLegs ? (((la+lb)/2) - ((sa+sb)/2)) : null;
+  const atm = Math.round(price);
+  const longStrike = atm;
+  const shortStrike = atm + 4;
+  const spreadWidth = 4;
+  const maxProfit = netDebit ? Math.round((spreadWidth - netDebit)*100) : null;
+  const maxLoss = netDebit ? Math.round(netDebit*100) : null;
+  const accountSize = parseFloat(document.getElementById('accountSize').value)||10000;
+  const riskPct = parseFloat(document.getElementById('riskPct').value)||2;
+  const maxRiskDollars = accountSize * (riskPct/100);
+  const maxContracts = netDebit ? Math.max(1, Math.floor(maxRiskDollars/(netDebit*100))) : null;
+
+  // Load journal for personal patterns
+  const journal = loadJournal();
+  const journalSummary = buildJournalSummary(journal);
+
+  show('stateLoading');
+  document.getElementById('analyzeBtn').disabled = true;
+  animateLoading();
+
+  const prompt = buildPrompt({
+    ticker:selectedTicker, day:selectedDay, price, vix, ivRank,
+    longStrike, shortStrike, netDebit, maxProfit, maxLoss,
+    maxContracts, accountSize, riskPct, maxRiskDollars,
+    isPreMarket, hasLegs, journalSummary
+  });
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body: JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:2000,
+        tools:[{type:'web_search_20250305',name:'web_search'}],
+        messages:[{role:'user',content:prompt}]
+      })
+    });
+    if(!resp.ok) throw new Error(`API error ${resp.status}: ${await resp.text()}`);
+    const data = await resp.json();
+    const text = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+    const clean = text.replace(/```json[\s\S]*?```/g, m => m.replace(/```json\n?/,'').replace(/\n?```/,'')).replace(/```/g,'').trim();
+    const json = JSON.parse(clean);
+    show('stateResults');
+    renderResults(json, {price,vix,ivRank,netDebit,maxProfit,maxLoss,maxContracts,accountSize,riskPct,longStrike,shortStrike});
+  } catch(err) {
+    show('stateResults');
+    document.getElementById('stateResults').innerHTML = `<div class="error-box"><strong>Analysis failed.</strong><br>${err.message}<br><br>Check: Is your API key correct? Do you have credits at console.anthropic.com?</div>`;
+  }
+  document.getElementById('analyzeBtn').disabled = false;
+}
+
+// ============================================================
+// JOURNAL SUMMARY FOR PROMPT
+// ============================================================
+function buildJournalSummary(journal) {
+  if(!journal.length) return 'No trade history yet — this is the first analysis.';
+  const total = journal.length;
+  const wins = journal.filter(j=>j.pnl>0).length;
+  const winRate = Math.round(wins/total*100);
+  const totalPnl = journal.reduce((a,j)=>a+j.pnl,0);
+  const byDay = {};
+  journal.forEach(j => {
+    const d = j.day?.split(' ')[0]||'?';
+    if(!byDay[d]) byDay[d]={w:0,l:0};
+    j.pnl>0 ? byDay[d].w++ : byDay[d].l++;
+  });
+  const dayStats = Object.entries(byDay).map(([d,v])=>`${d}: ${v.w}W/${v.l}L`).join(', ');
+  const last5 = journal.slice(-5).map(j=>`${j.day} entry $${j.entry} exit $${j.exit} P&L $${j.pnl}`).join(' | ');
+  return `${total} trades logged. Win rate: ${winRate}%. Total P&L: $${totalPnl}. By day: ${dayStats}. Last 5: ${last5}.`;
+}
+
+// ============================================================
+// PROMPT BUILDER
+// ============================================================
+function buildPrompt(d) {
+  return `You are an expert options trader analyzing ${d.ticker} for a 0DTE options trade on ${d.day}.
+
+LIVE MARKET DATA:
+- ${d.ticker} price: $${d.price}
+- VIX: ${d.vix}
+- IV Rank: ${d.ivRank!==null ? d.ivRank+'/100' : 'not provided'}
+- Suggested strikes: $${d.longStrike}/$${d.shortStrike} bull call spread
+${d.hasLegs ? `- Net debit: $${d.netDebit?.toFixed(2)}/contract\n- Max profit: $${d.maxProfit} | Max loss: $${d.maxLoss}` : '- Option leg prices: not provided (pre-market or prep mode)'}
+- Account: $${d.accountSize} | Risk: ${d.riskPct}% = $${d.maxRiskDollars} max
+${d.maxContracts ? `- Max contracts: ${d.maxContracts}` : ''}
+
+PERSONAL TRADE HISTORY:
+${d.journalSummary}
+
+TASK: First use web_search to find current ${d.ticker} news, market sentiment, and any catalysts for today ${d.day}. Search for "${d.ticker} options news today" and "market catalyst ${d.day}". Then run all 7 frameworks:
+
+1. TRADE IDEA GENERATOR: Best setup for ${d.ticker} at $${d.price} on ${d.day}
+2. TECHNICAL ANALYSIS: Key levels, RSI, MACD, trend — daily + weekly bias  
+3. NEWS TO TRADE: From your web search — what did you find and how does it impact trade direction?
+4. STRATEGY BACKTEST: Reference win rates for 0DTE bull call spreads on ${d.ticker} during this type of catalyst day
+5. PORTFOLIO RISK: Position sizing with max ${d.maxContracts||'N/A'} contracts, VIX at ${d.vix}, IV rank ${d.ivRank||'unknown'}
+6. JOURNAL PATTERNS: Based on the trade history above — flag any personal bias patterns for today
+7. DAILY TRADE PLAN: Time-stamped checklist in CENTRAL TIME (CT)
+
+Respond ONLY with valid JSON (no markdown, no preamble):
+{
+  "verdict": "GO"|"WAIT"|"SKIP",
+  "verdictTitle": "short reason",
+  "verdictSub": "one sentence",
+  "trade": {
+    "strategy": "string",
+    "longStrike": ${d.longStrike},
+    "shortStrike": ${d.shortStrike},
+    "netDebit": ${d.netDebit?.toFixed(2)||0},
+    "maxProfit": ${d.maxProfit||0},
+    "maxLoss": ${d.maxLoss||0},
+    "breakeven": 0,
+    "rr": "1:X",
+    "contracts": ${d.maxContracts||1},
+    "totalRisk": ${d.maxContracts&&d.maxLoss ? d.maxContracts*d.maxLoss : 0},
+    "entryCondition": "string",
+    "stopRule": "string",
+    "profitTarget": "string",
+    "hardClose": "HH:MM AM/PM CT"
+  },
+  "metrics": {
+    "technicalBias": "Bullish"|"Bearish"|"Neutral",
+    "ivEnvironment": "Low"|"Normal"|"High",
+    "catalystRisk": "Low"|"Medium"|"High",
+    "confidence": "Low"|"Medium"|"High"
+  },
+  "news": [
+    {"headline":"string","impact":"Bullish"|"Bearish"|"Neutral","detail":"string"}
+  ],
+  "frameworks": [
+    {"num":"①","name":"Trade idea","signal":"Bullish"|"Bearish"|"Neutral","note":"string"},
+    {"num":"②","name":"Technical","signal":"Bullish"|"Bearish"|"Neutral","note":"string"},
+    {"num":"③","name":"News","signal":"Bullish"|"Bearish"|"Neutral","note":"string"},
+    {"num":"④","name":"Backtest","signal":"Bullish"|"Bearish"|"Neutral","note":"string"},
+    {"num":"⑤","name":"Risk","signal":"Bullish"|"Bearish"|"Neutral","note":"string"},
+    {"num":"⑥","name":"Journal","signal":"Bullish"|"Bearish"|"Neutral","note":"string"},
+    {"num":"⑦","name":"Plan","signal":"Bullish"|"Bearish"|"Neutral","note":"string"}
+  ],
+  "journalInsight": "Personal pattern note based on history",
+  "reasoning": "3-4 sentence paragraph",
+  "checklist": [
+    {"time":"HH:MM CT","action":"string"}
+  ]
+}`;
+}
+
+// ============================================================
+// RENDER RESULTS
+// ============================================================
+function renderResults(d, inputs) {
+  const vc = d.verdict;
+  const tcol = s => s==='Bullish'?'green':s==='Bearish'?'red':'amber';
+  const now = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',timeZone:'America/Chicago'});
+
+  document.getElementById('stateResults').innerHTML = `
+    <!-- VERDICT -->
+    <div class="verdict ${vc}">
+      <div class="v-word">${vc}</div>
+      <div class="v-body">
+        <div class="v-title">${d.verdictTitle||''}</div>
+        <div class="v-sub">${d.verdictSub||''}</div>
+      </div>
+      <div class="v-time">${now} CT</div>
+    </div>
+
+    <!-- CONTRACTS BADGE -->
+    ${inputs.maxContracts ? `
+    <div class="contracts-badge">
+      <div class="cb-num">${d.trade?.contracts||inputs.maxContracts}</div>
+      <div>
+        <div class="cb-label">Max contracts at ${inputs.riskPct}% risk rule<br>Total risk: $${d.trade?.totalRisk||Math.round((inputs.maxContracts||1)*(inputs.maxLoss||0))}</div>
+        <div class="cb-risk">Account $${inputs.accountSize.toLocaleString()} · Max loss per trade $${Math.round(inputs.accountSize*(inputs.riskPct/100))}</div>
+      </div>
+    </div>` : ''}
+
+    <!-- TABS -->
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('trade',this)">Trade</button>
+      <button class="tab" onclick="switchTab('news',this)">News</button>
+      <button class="tab" onclick="switchTab('frameworks',this)">7 Frameworks</button>
+      <button class="tab" onclick="switchTab('plan',this)">Day Plan</button>
+      <button class="tab" onclick="switchTab('midtrade',this)">Mid-Trade</button>
+      <button class="tab" onclick="switchTab('journal',this)">Journal</button>
+    </div>
+
+    <!-- TAB: TRADE -->
+    <div id="tab-trade" class="tab-pane active">
+      <div class="metrics-4" style="margin-bottom:10px;">
+        <div class="metric"><div class="m-label">Price</div><div class="m-val blue">$${inputs.price}</div><div class="m-sub">Live input</div></div>
+        <div class="metric"><div class="m-label">Net debit</div><div class="m-val red">${inputs.netDebit?'$'+inputs.netDebit.toFixed(2):'—'}</div><div class="m-sub">Per contract</div></div>
+        <div class="metric"><div class="m-label">Max profit</div><div class="m-val green">${inputs.maxProfit?'$'+inputs.maxProfit:'—'}</div><div class="m-sub">At expiry</div></div>
+        <div class="metric"><div class="m-label">Max loss</div><div class="m-val red">${inputs.maxLoss?'$'+inputs.maxLoss:'—'}</div><div class="m-sub">Full debit</div></div>
+      </div>
+      <div class="metrics-2" style="margin-bottom:10px;">
+        <div class="g-card">
+          <div class="card-title">Trade structure</div>
+          <div class="t-row"><span class="t-label">Strategy</span><span class="t-val blue">${d.trade?.strategy||'Bull call spread'}</span></div>
+          <div class="t-row"><span class="t-label">Buy call</span><span class="t-val">$${d.trade?.longStrike||inputs.longStrike} strike</span></div>
+          <div class="t-row"><span class="t-label">Sell call</span><span class="t-val">$${d.trade?.shortStrike||inputs.shortStrike} strike</span></div>
+          <div class="t-row"><span class="t-label">Net debit</span><span class="t-val red">${d.trade?.netDebit?'$'+d.trade.netDebit.toFixed(2):inputs.netDebit?'$'+inputs.netDebit.toFixed(2):'—'}</span></div>
+          <div class="t-row"><span class="t-label">Breakeven</span><span class="t-val amber">$${d.trade?.breakeven||'—'}</span></div>
+          <div class="t-row"><span class="t-label">R : R</span><span class="t-val green">${d.trade?.rr||'—'}</span></div>
+        </div>
+        <div class="g-card">
+          <div class="card-title">Management rules</div>
+          <div class="t-row"><span class="t-label">Entry condition</span><span class="t-val" style="text-align:right;font-size:11px;max-width:140px;">${d.trade?.entryCondition||'—'}</span></div>
+          <div class="t-row"><span class="t-label">Profit target</span><span class="t-val green" style="font-size:11px;">${d.trade?.profitTarget||'—'}</span></div>
+          <div class="t-row"><span class="t-label">Stop rule</span><span class="t-val red" style="font-size:11px;">${d.trade?.stopRule||'—'}</span></div>
+          <div class="t-row"><span class="t-label">Hard close CT</span><span class="t-val red">${d.trade?.hardClose||'—'}</span></div>
+          <div class="t-row"><span class="t-label">Contracts</span><span class="t-val amber">${d.trade?.contracts||inputs.maxContracts||1}</span></div>
+        </div>
+      </div>
+      <div class="g-card">
+        <div class="card-title">AI reasoning <span class="card-title-accent">— based on live news + your journal</span></div>
+        <div class="tags">
+          <span class="tag ${tcol(d.metrics?.technicalBias)}">Tech: ${d.metrics?.technicalBias||'?'}</span>
+          <span class="tag ${d.metrics?.ivEnvironment==='Low'?'green':d.metrics?.ivEnvironment==='High'?'red':'amber'}">IV: ${d.metrics?.ivEnvironment||'?'}</span>
+          <span class="tag ${d.metrics?.catalystRisk==='Low'?'green':d.metrics?.catalystRisk==='High'?'red':'amber'}">Catalyst: ${d.metrics?.catalystRisk||'?'}</span>
+          <span class="tag ${d.metrics?.confidence==='High'?'green':d.metrics?.confidence==='Low'?'red':'amber'}">Confidence: ${d.metrics?.confidence||'?'}</span>
+        </div>
+        ${d.journalInsight ? `<div style="background:var(--amber-bg);border:1px solid var(--amber-bd);border-radius:var(--radius);padding:8px 10px;font-size:11px;color:var(--amber);margin-bottom:8px;line-height:1.5;">◉ Journal insight: ${d.journalInsight}</div>` : ''}
+        <div class="reasoning">${d.reasoning||''}</div>
+      </div>
+      <div class="g-card">
+        <div class="card-title">Log this trade</div>
+        <div class="log-form">
+          <div><div style="font-size:9px;color:var(--muted);margin-bottom:3px;letter-spacing:.1em;text-transform:uppercase;">Entry debit paid</div><input class="inp" id="j-entry" placeholder="e.g. 1.75" type="number" step="0.01"/></div>
+          <div><div style="font-size:9px;color:var(--muted);margin-bottom:3px;letter-spacing:.1em;text-transform:uppercase;">Exit price</div><input class="inp" id="j-exit" placeholder="e.g. 2.90" type="number" step="0.01"/></div>
+          <div><div style="font-size:9px;color:var(--muted);margin-bottom:3px;letter-spacing:.1em;text-transform:uppercase;">Contracts</div><input class="inp" id="j-contracts" placeholder="${d.trade?.contracts||1}" type="number" step="1" value="${d.trade?.contracts||1}"/></div>
+          <button class="log-btn" onclick="logTrade('${vc}','${inputs.longStrike}','${inputs.shortStrike}')">Log →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: NEWS -->
+    <div id="tab-news" class="tab-pane">
+      <div class="g-card">
+        <div class="card-title">Live news — auto-searched <span class="card-title-accent">no manual input needed</span></div>
+        ${(d.news||[]).map(n=>`
+          <div class="news-item">
+            <div class="news-hl">${n.headline}</div>
+            <div><span class="news-impact tag ${tcol(n.impact)}">${n.impact}</span><span class="news-detail">${n.detail}</span></div>
+          </div>`).join('')||'<div style="color:var(--muted);font-size:12px;padding:10px 0;">No news items returned.</div>'}
+      </div>
+    </div>
+
+    <!-- TAB: FRAMEWORKS -->
+    <div id="tab-frameworks" class="tab-pane">
+      <div class="g-card">
+        <div class="card-title">All 7 frameworks</div>
+        <div class="fw-grid">
+          ${(d.frameworks||[]).map(f=>`
+            <div class="fw-item">
+              <div class="fw-num">${f.num}</div>
+              <div class="fw-body">
+                <div class="fw-name">${f.name}</div>
+                <div class="fw-note">${f.note}</div>
+                <div class="fw-sig ${f.signal==='Bullish'?'bull':f.signal==='Bearish'?'bear':'neut'}">${f.signal}</div>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: PLAN -->
+    <div id="tab-plan" class="tab-pane">
+      <div class="g-card">
+        <div class="card-title">Today's checklist — ${selectedDay} · all times Central</div>
+        ${(d.checklist||[]).map((c,i)=>`
+          <div class="cl-item">
+            <span class="cl-time">${c.time}</span>
+            <div class="cl-check" id="chk${i}" onclick="toggleCheck(${i})"></div>
+            <span class="cl-text">${c.action}</span>
+          </div>`).join('')}
+      </div>
+    </div>
+
+    <!-- TAB: MID-TRADE -->
+    <div id="tab-midtrade" class="tab-pane">
+      <div class="mid-trade-panel">
+        <div class="mid-title">MID-TRADE CHECK-IN</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Enter your current spread value to get HOLD / TAKE PROFIT / EXIT NOW signal</div>
+        <div class="inp-2col" style="margin-bottom:10px;">
+          <div>
+            <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:3px;">Entry debit paid</div>
+            <input class="inp" id="mt-entry" placeholder="e.g. 1.75" type="number" step="0.01" value="${inputs.netDebit?.toFixed(2)||''}"/>
+          </div>
+          <div>
+            <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:3px;">Current spread value</div>
+            <input class="inp" id="mt-current" placeholder="e.g. 2.40" type="number" step="0.01"/>
+          </div>
+        </div>
+        <button class="btn-sm btn-amber" style="width:100%;padding:10px;" onclick="checkMidTrade()">CHECK NOW</button>
+        <div id="mt-result" style="margin-top:12px;"></div>
+      </div>
+    </div>
+
+    <!-- TAB: JOURNAL -->
+    <div id="tab-journal" class="tab-pane">
+      ${renderJournal()}
+    </div>
+  `;
+}
+
+// ============================================================
+// MID-TRADE CHECK
+// ============================================================
+function checkMidTrade() {
+  const entry = parseFloat(document.getElementById('mt-entry')?.value);
+  const current = parseFloat(document.getElementById('mt-current')?.value);
+  const el = document.getElementById('mt-result');
+  if(!entry || !current) { el.innerHTML='<div style="color:var(--muted);font-size:12px;">Enter both values above.</div>'; return; }
+
+  const now = new Date();
+  const ct = new Date(now.toLocaleString('en-US',{timeZone:'America/Chicago'}));
+  const h = ct.getHours(), m = ct.getMinutes();
+  const min = h*60+m;
+  const gain = ((current - entry)/entry)*100;
+  const afterNoon = min >= 12*60;
+  const afterTwo = min >= 14*60;
+
+  let verdict, cls, advice;
+  if(afterTwo && gain < 30) {
+    verdict='EXIT NOW'; cls='exit';
+    advice='After 2pm CT, theta decay is exponential. Even a small gain should be taken. Do not hold to expiry.';
+  } else if(afterNoon && gain < 0) {
+    verdict='EXIT NOW'; cls='exit';
+    advice='Losing position after noon — time value is collapsing. Cut losses now, do not average down.';
+  } else if(gain >= 50) {
+    verdict='TAKE 50%'; cls='profit';
+    advice=`You're up ${gain.toFixed(0)}%. Close half your contracts now. Let the rest ride with stop at breakeven.`;
+  } else if(gain >= 25 && afterNoon) {
+    verdict='TAKE PROFIT'; cls='profit';
+    advice=`Up ${gain.toFixed(0)}% after noon — good time to close. Theta is accelerating.`;
+  } else if(gain >= 0) {
+    verdict='HOLD'; cls='hold';
+    advice=`Up ${gain.toFixed(0)}%. ${afterNoon?'Watch closely — noon theta kicking in.':'Still early. Let the thesis develop.'}`;
+  } else {
+    verdict='HOLD / WATCH'; cls='hold';
+    advice=`Down ${Math.abs(gain).toFixed(0)}%. ${afterNoon?'Getting close to stop territory.':'Still within normal range.'}`;
+  }
+
+  const thetaPct = Math.min(100, Math.max(0, ((min - 8*60+30) / (6.5*60)) * 100));
+  el.innerHTML = `
+    <div style="margin-bottom:8px;">
+      <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px;">Theta decay (day progress)</div>
+      <div class="theta-bar"><div class="theta-fill" style="width:${thetaPct}%"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);">
+        <span>Open 8:30 CT</span><span>Close 3:00 CT</span>
+      </div>
+    </div>
+    <div class="mid-verdict ${cls}">${verdict}</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5;">${advice}</div>
+    <div style="font-size:10px;color:var(--muted);margin-top:8px;">P&L: ${gain>=0?'+':''}${gain.toFixed(1)}% · Entry $${entry.toFixed(2)} → Current $${current.toFixed(2)}</div>`;
+}
+
+// ============================================================
+// CHECKLIST TOGGLE
+// ============================================================
+function toggleCheck(i) {
+  const el = document.getElementById(`chk${i}`);
+  el.classList.toggle('checked');
+}
+
+// ============================================================
+// JOURNAL
+// ============================================================
+function logTrade(verdict, longStrike, shortStrike) {
+  const entry = parseFloat(document.getElementById('j-entry')?.value);
+  const exit = parseFloat(document.getElementById('j-exit')?.value);
+  const contracts = parseInt(document.getElementById('j-contracts')?.value)||1;
+  if(!entry||!exit) { alert('Enter both entry and exit prices.'); return; }
+  const pnl = Math.round((exit - entry) * 100 * contracts);
+  const journal = loadJournal();
+  journal.push({
+    id: Date.now(),
+    date: new Date().toLocaleDateString('en-US',{month:'numeric',day:'numeric'}),
+    day: selectedDay,
+    ticker: selectedTicker,
+    spread: `$${longStrike}/$${shortStrike}`,
+    verdict,
+    entry: entry.toFixed(2),
+    exit: exit.toFixed(2),
+    contracts,
+    pnl
+  });
+  saveJournal(journal);
+  // Refresh journal tab
+  const jTab = document.getElementById('tab-journal');
+  if(jTab) jTab.innerHTML = renderJournal();
+  switchTab('journal', document.querySelector('.tab:nth-child(6)'));
+  ['j-entry','j-exit'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+}
+
+function renderJournal() {
+  const journal = loadJournal();
+  const wins = journal.filter(j=>j.pnl>0).length;
+  const totalPnl = journal.reduce((a,j)=>a+j.pnl,0);
+  const avgPnl = journal.length ? Math.round(totalPnl/journal.length) : 0;
+  const winRate = journal.length ? Math.round(wins/journal.length*100) : 0;
+
+  // Day breakdown
+  const byDay={};
+  journal.forEach(j=>{const d=j.day?.split(' ')[0]||'?';if(!byDay[d])byDay[d]={w:0,l:0};j.pnl>0?byDay[d].w++:byDay[d].l++;});
+  const bestDay = Object.entries(byDay).sort((a,b)=>(b[1].w/(b[1].w+b[1].l))-(a[1].w/(a[1].w+a[1].l)))[0];
+  const worstDay = Object.entries(byDay).sort((a,b)=>(a[1].w/(a[1].w+a[1].l))-(b[1].w/(b[1].w+b[1].l)))[0];
+
+  const exportBtn = `<button class="export-btn" onclick="exportCSV()" style="margin-left:auto;">Export CSV ↓</button>`;
+
+  if(!journal.length) return `<div class="g-card"><div class="card-title">Trade journal ${exportBtn}</div><div class="j-empty">No trades logged yet. Log your first trade in the Trade tab after analysis.</div></div>`;
+
+  return `
+    <div class="metrics-4" style="margin-bottom:10px;">
+      <div class="metric"><div class="m-label">Total trades</div><div class="m-val">${journal.length}</div></div>
+      <div class="metric"><div class="m-label">Win rate</div><div class="m-val ${winRate>=50?'green':'red'}">${winRate}%</div></div>
+      <div class="metric"><div class="m-label">Total P&L</div><div class="m-val ${totalPnl>=0?'green':'red'}">$${totalPnl}</div></div>
+      <div class="metric"><div class="m-label">Avg trade</div><div class="m-val ${avgPnl>=0?'green':'red'}">$${avgPnl}</div></div>
+    </div>
+    ${journal.length>=5 ? `
+    <div class="g-card" style="margin-bottom:10px;">
+      <div class="card-title">Personal patterns</div>
+      ${bestDay?`<div class="pattern-item">Your best day: <strong>${bestDay[0]}</strong> — ${bestDay[1].w}W/${bestDay[1].l}L (${Math.round(bestDay[1].w/(bestDay[1].w+bestDay[1].l)*100)}% win rate)</div>`:''}
+      ${worstDay&&worstDay[0]!==bestDay?.[0]?`<div class="pattern-item">Weakest day: <strong>${worstDay[0]}</strong> — ${worstDay[1].w}W/${worstDay[1].l}L (${Math.round(worstDay[1].w/(worstDay[1].w+worstDay[1].l)*100)}% win rate) — consider skipping</div>`:''}
+      <div class="pattern-item">This data is fed back into every new analysis automatically.</div>
+    </div>` : ''}
+    <div class="g-card">
+      <div class="card-title" style="display:flex;align-items:center;">Trade history ${exportBtn}</div>
+      <div style="overflow-x:auto;">
+        <div class="j-header-row"><span>Date</span><span>Entry</span><span>Exit</span><span>Trade</span><span>P&L</span><span>Verdict</span></div>
+        ${journal.slice().reverse().map(j=>`
+          <div class="j-data-row">
+            <span>${j.date}</span>
+            <span>$${j.entry}</span>
+            <span>$${j.exit}</span>
+            <span style="font-size:10px;">${j.spread||j.day}</span>
+            <span class="${j.pnl>=0?'j-win':'j-loss'}">${j.pnl>=0?'+':''}$${j.pnl}</span>
+            <span style="font-size:10px;color:var(--muted);">${j.verdict||''}</span>
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+function exportCSV() {
+  const journal = loadJournal();
+  if(!journal.length){ alert('No trades to export.'); return; }
+  const header = 'Date,Day,Ticker,Spread,Entry,Exit,Contracts,PnL,Verdict\n';
+  const rows = journal.map(j=>`${j.date},${j.day},${j.ticker||'IWM'},${j.spread||''},${j.entry},${j.exit},${j.contracts||1},${j.pnl},${j.verdict||''}`).join('\n');
+  const blob = new Blob([header+rows],{type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `iwm-journal-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
+// ============================================================
+// TAB SWITCHER
+// ============================================================
+function switchTab(name, el) {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  const pane = document.getElementById('tab-'+name);
+  if(pane) pane.classList.add('active');
+}
+</script>
+</body>
+</html>
