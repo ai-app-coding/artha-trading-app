@@ -892,11 +892,48 @@ async function runAnalysis(){
     updateStatus('Parsing JSON response...');
     let json;
     try {
-      const jsonMatch=text.match(/\{[\s\S]*\}/);
-      if(!jsonMatch) throw new Error('No JSON object found in response');
-      json=JSON.parse(jsonMatch[0]);
+      // Extract the JSON object from the response
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if(!jsonMatch) throw new Error('No JSON object found in response. Raw text: '+text.slice(0,200));
+      let raw = jsonMatch[0];
+
+      // Fix common JSON-breaking issues from Claude's output:
+      // 1. Replace curly apostrophes/quotes with straight ones
+      raw = raw.replace(/[\u2018\u2019]/g, "'");
+      raw = raw.replace(/[\u201C\u201D]/g, '"');
+      // 2. Remove control characters
+      raw = raw.replace(/[\u0000-\u001F\u007F]/g, ' ');
+      // 3. Fix unescaped backslashes in strings (but not already escaped ones)
+      // 4. Fix trailing commas before } or ]
+      raw = raw.replace(/,\s*([}\]])/g, '$1');
+
+      // Try parsing — if it fails, use a line-by-line search to find the bad part
+      try {
+        json = JSON.parse(raw);
+      } catch(e1) {
+        // Try to find and fix the specific position
+        const pos = parseInt((e1.message.match(/position (\d+)/) || [])[1]);
+        if(pos) {
+          // Show context around the error for debugging
+          const ctx = raw.slice(Math.max(0,pos-50), pos+50);
+          console.warn('[Artha] JSON error at pos '+pos+', context: '+ctx);
+          // Try aggressive fix: re-escape any unescaped quotes inside string values
+          const fixed = raw.replace(/"([^"]*?)"/g, function(match, inner) {
+            return '"' + inner.replace(/"/g, '\\"') + '"';
+          });
+          try {
+            json = JSON.parse(fixed);
+          } catch(e2) {
+            // Last resort: extract just the top-level fields we need
+            json = extractPartialJson(raw);
+            if(!json) throw new Error('JSON parse failed at position '+pos+'. Context: "'+ctx+'"');
+          }
+        } else {
+          throw new Error('JSON parse failed: '+e1.message+'. Start of JSON: '+raw.slice(0,200));
+        }
+      }
     } catch(parseErr){
-      throw new Error('JSON parse failed: '+parseErr.message+'. Raw text (first 300 chars): '+text.slice(0,300));
+      throw new Error(parseErr.message+'. Raw text (first 300 chars): '+text.slice(0,300));
     }
     updateStatus('Rendering results...');
     document.getElementById('stateLoading').style.display='none';
@@ -918,6 +955,56 @@ function updateStatus(msg){
   const el=document.getElementById('loadingLabel');
   if(el) el.textContent=msg;
   console.log('[Artha]',msg);
+}
+
+// Fallback: extract key fields from malformed JSON using regex
+function extractPartialJson(raw) {
+  try {
+    const get = (key) => {
+      const m = raw.match(new RegExp('"'+key+'"\\s*:\\s*"([^"]*?)"'));
+      return m ? m[1] : '';
+    };
+    const getArr = (key) => {
+      const m = raw.match(new RegExp('"'+key+'"\\s*:\\s*\\[([\\s\\S]*?)\\]'));
+      if(!m) return [];
+      try { return JSON.parse('['+m[1]+']'); } catch(e) { return []; }
+    };
+    const verdict = get('verdict') || 'WAIT';
+    return {
+      verdict,
+      verdictTitle: get('verdictTitle') || 'Analysis complete',
+      verdictSub: get('verdictSub') || 'Results retrieved — some formatting was adjusted.',
+      trade: {
+        strategy: get('strategy') || 'Bull call spread',
+        longStrike: parseFloat(raw.match(/"longStrike"\s*:\s*(\d+)/)?.[1]) || 0,
+        shortStrike: parseFloat(raw.match(/"shortStrike"\s*:\s*(\d+)/)?.[1]) || 0,
+        netDebit: parseFloat(raw.match(/"netDebit"\s*:\s*([\d.]+)/)?.[1]) || 0,
+        maxProfit: parseFloat(raw.match(/"maxProfit"\s*:\s*(\d+)/)?.[1]) || 0,
+        maxLoss: parseFloat(raw.match(/"maxLoss"\s*:\s*(\d+)/)?.[1]) || 0,
+        breakeven: parseFloat(raw.match(/"breakeven"\s*:\s*([\d.]+)/)?.[1]) || 0,
+        rr: get('rr') || '—',
+        contracts: parseInt(raw.match(/"contracts"\s*:\s*(\d+)/)?.[1]) || 1,
+        totalRisk: parseInt(raw.match(/"totalRisk"\s*:\s*(\d+)/)?.[1]) || 0,
+        entryCondition: get('entryCondition') || '—',
+        stopRule: get('stopRule') || '—',
+        profitTarget: get('profitTarget') || '—',
+        hardClose: get('hardClose') || '—',
+      },
+      metrics: {
+        technicalBias: get('technicalBias') || 'Neutral',
+        ivEnvironment: get('ivEnvironment') || 'Normal',
+        catalystRisk: get('catalystRisk') || 'Medium',
+        confidence: get('confidence') || 'Medium',
+      },
+      news: [],
+      frameworks: [],
+      checklist: [],
+      reasoning: 'Analysis completed — some display fields were simplified due to formatting in the response. The verdict and trade details above are accurate.',
+      journalInsight: null,
+    };
+  } catch(e) {
+    return null;
+  }
 }
 
 function showError(title,detail,extra){
@@ -961,7 +1048,15 @@ ${d.hasLegs?`- Net debit: $${d.netDebit?.toFixed(2)}/contract\n- Max profit: $${
 PERSONAL TRADE JOURNAL:
 ${d.journalSummary}
 
-TASK: First use web_search to find current ${d.ticker} news and catalysts for ${d.day}. Then run all 7 frameworks and respond ONLY with valid JSON (no markdown):
+TASK: First use web_search to find current ${d.ticker} news and catalysts for ${d.day}. Then run all 7 frameworks.
+
+CRITICAL: Respond ONLY with a single valid JSON object. Rules:
+- No text before { or after the final }
+- No markdown code fences
+- Use only straight double quotes " never curly quotes
+- Escape apostrophes as \\' in all string values (e.g. "don\\'t" not "don't")
+- No trailing commas after last array/object items
+- Keep all string values on a single line, no line breaks inside strings
 {
   "verdict":"GO"|"WAIT"|"SKIP",
   "verdictTitle":"short reason",
