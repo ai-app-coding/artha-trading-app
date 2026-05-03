@@ -822,11 +822,15 @@ const LOAD_STEPS=[
 async function animateLoading(){
   const c=document.getElementById('loadSteps');
   c.innerHTML=LOAD_STEPS.map((s,i)=>`<div class="l-step" id="ls${i}"><span class="l-icon">${s.icon}</span>${s.label}</div>`).join('');
-  for(let i=0;i<LOAD_STEPS.length;i++){
+  let i=0;
+  while(i<LOAD_STEPS.length){
     const el=document.getElementById(`ls${i}`);
-    el.classList.add('active'); await new Promise(r=>setTimeout(r,750));
+    if(!el) break;
+    el.classList.add('active');
+    await new Promise(r=>setTimeout(r,900));
     el.classList.remove('active'); el.classList.add('done');
     el.querySelector('.l-icon').textContent='✓';
+    i++;
   }
 }
 
@@ -866,25 +870,64 @@ async function runAnalysis(){
   const prompt=buildPrompt({ticker:selectedTicker,day:selectedDay,price,vix,ivRank,longStrike,shortStrike,netDebit,maxProfit,maxLoss,maxContracts,accountSize,riskPct,maxRiskDollars,isPreMarket,hasLegs,journalSummary});
 
   try {
+    updateStatus('Calling Claude API...');
     const resp=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
       body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:2000,tools:[{type:'web_search_20250305',name:'web_search'}],messages:[{role:'user',content:prompt}]})
     });
-    if(!resp.ok)throw new Error(`API error ${resp.status}: ${await resp.text()}`);
+    updateStatus('Response received — parsing...');
+    if(!resp.ok){
+      const errText=await resp.text();
+      throw new Error('API error '+resp.status+': '+errText);
+    }
     const data=await resp.json();
-    const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
-    const clean=text.replace(/```json[\s\S]*?```/g,m=>m.replace(/```json\n?/,'').replace(/\n?```/,'')).replace(/```/g,'').trim();
-    const json=JSON.parse(clean);
+    updateStatus('Extracting analysis...');
+    const blocks=data.content||[];
+    const text=blocks.filter(b=>b.type==='text').map(b=>b.text).join('');
+    if(!text){
+      const types=blocks.map(b=>b.type).join(', ');
+      throw new Error('No text in response. Block types: '+types+'. Stop reason: '+data.stop_reason);
+    }
+    updateStatus('Parsing JSON response...');
+    let json;
+    try {
+      const jsonMatch=text.match(/\{[\s\S]*\}/);
+      if(!jsonMatch) throw new Error('No JSON object found in response');
+      json=JSON.parse(jsonMatch[0]);
+    } catch(parseErr){
+      throw new Error('JSON parse failed: '+parseErr.message+'. Raw text (first 300 chars): '+text.slice(0,300));
+    }
+    updateStatus('Rendering results...');
     document.getElementById('stateLoading').style.display='none';
     document.getElementById('stateResults').style.display='block';
-    renderResults(json,{price,vix,ivRank,netDebit,maxProfit,maxLoss,maxContracts,accountSize,riskPct,longStrike,shortStrike});
+    try {
+      renderResults(json,{price,vix,ivRank,netDebit,maxProfit,maxLoss,maxContracts,accountSize,riskPct,longStrike,shortStrike});
+    } catch(renderErr){
+      document.getElementById('stateResults').innerHTML=showError('Render error — analysis succeeded but display failed',renderErr.message,JSON.stringify(json,null,2).slice(0,500));
+    }
   } catch(err){
     document.getElementById('stateLoading').style.display='none';
     document.getElementById('stateResults').style.display='block';
-    document.getElementById('stateResults').innerHTML=`<div class="error-card"><strong>Analysis failed.</strong><br>${err.message}<br><br>Check: Is your API key correct? Do you have credits at console.anthropic.com?</div>`;
+    document.getElementById('stateResults').innerHTML=showError('Analysis failed',err.message,'Check: API key correct? Credits at console.anthropic.com?');
   }
   document.getElementById('analyzeBtn').disabled=false;
+}
+
+function updateStatus(msg){
+  const el=document.getElementById('loadingLabel');
+  if(el) el.textContent=msg;
+  console.log('[Artha]',msg);
+}
+
+function showError(title,detail,extra){
+  return '<div class="error-card" style="max-height:none;">'
+    +'<div style="font-size:15px;font-weight:700;color:#B91C1C;margin-bottom:8px;">'+title+'</div>'
+    +'<div style="font-size:13px;margin-bottom:8px;">'+detail+'</div>'
+    +(extra?'<details style="margin-top:8px;"><summary style="font-size:11px;color:#64748B;cursor:pointer;">Debug details</summary>'
+    +'<pre style="font-size:10px;background:#f8f8f8;padding:8px;border-radius:4px;overflow:auto;max-height:200px;white-space:pre-wrap;">'+extra+'</pre></details>':'')
+    +'<div style="margin-top:12px;font-size:12px;color:#64748B;">Need help? Check the browser console (F12) for full error details.</div>'
+    +'</div>';
 }
 
 // ============================================================
@@ -945,9 +988,25 @@ TASK: First use web_search to find current ${d.ticker} news and catalysts for ${
 // RENDER RESULTS
 // ============================================================
 function renderResults(d,inputs){
-  const vc=d.verdict;
+  if(!d||!d.verdict) throw new Error('Invalid response structure — missing verdict field');
+  const vc=d.verdict||'WAIT';
   const tc=s=>s==='Bullish'?'green':s==='Bearish'?'red':'amber';
   const now=new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',timeZone:'America/Chicago'});
+  // Defensive defaults for all fields
+  d.verdictTitle=d.verdictTitle||'Analysis complete';
+  d.verdictSub=d.verdictSub||'';
+  d.trade=d.trade||{};
+  d.metrics=d.metrics||{};
+  d.news=d.news||[];
+  d.frameworks=d.frameworks||[];
+  d.checklist=d.checklist||[];
+  d.reasoning=d.reasoning||'';
+  d.journalInsight=d.journalInsight||null;
+  inputs=inputs||{};
+  inputs.maxContracts=inputs.maxContracts||null;
+  inputs.maxLoss=inputs.maxLoss||0;
+  inputs.maxProfit=inputs.maxProfit||0;
+  inputs.netDebit=inputs.netDebit||null;
 
   document.getElementById('stateResults').innerHTML=`
 
