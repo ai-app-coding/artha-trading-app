@@ -607,6 +607,33 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
       <button class="analyze-btn" id="analyzeBtn" onclick="runAnalysis()">
         ✦ Analyze Now
       </button>
+      <div class="s-section s-teal" style="border-bottom:none;">
+        <div class="s-head">
+          <div class="s-icon">
+            <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          </div>
+          <div class="s-title">Historical Data</div>
+          <div class="pill" id="histStatus" style="margin-left:auto;background:var(--bg);border:1px solid var(--border);color:var(--text3);font-size:9px;padding:2px 6px;">Not loaded</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:6px;" onclick="loadHistoricalData(true)" id="histBtn">
+          ↓ Load IWM History (2yr)
+        </button>
+        <div class="inp-row" style="margin-bottom:6px;">
+          <div class="inp-label" style="font-size:9px;">Twelve Data API key <span style="color:var(--teal-text);font-size:8px;">free at twelvedata.com</span></div>
+          <div style="display:flex;gap:4px;">
+            <input class="inp" id="tdKeyInput" placeholder="paste key here" style="font-size:11px;padding:5px 8px;" type="password"/>
+            <button class="btn btn-ghost btn-sm" style="padding:5px 8px;font-size:10px;white-space:nowrap;" onclick="saveTdKey()">Save</button>
+          </div>
+        </div>
+        <div class="inp-row" style="margin-top:4px;">
+          <div class="inp-label" style="font-size:9px;">Alpha Vantage key <span style="color:var(--teal-text);font-size:8px;">free at alphavantage.co</span></div>
+          <div style="display:flex;gap:4px;">
+            <input class="inp" id="avKeyInput" placeholder="paste key here" style="font-size:11px;padding:5px 8px;" type="password"/>
+            <button class="btn btn-ghost btn-sm" style="padding:5px 8px;font-size:10px;white-space:nowrap;" onclick="saveAvKey()">Save</button>
+          </div>
+        </div>
+        <div style="font-size:10px;color:var(--text3);line-height:1.5;margin-top:4px;">Get either key free — no credit card. Twelve Data recommended (800 calls/day).</div>
+      </div>
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;" onclick="resetApp()">↺ Reset all fields</button>
     </div>
 
@@ -696,6 +723,12 @@ async function saveJournalEntry(entry) {
 window.addEventListener('DOMContentLoaded',()=>{
   initClock(); initDaySelector(); initTickerSelector(); checkApiKey(); updateMarketMode();
   setInterval(updateMarketMode, 60000);
+  // Seed default Twelve Data key if not already set
+  if(!localStorage.getItem('artha_tdkey')) {
+    localStorage.setItem('artha_tdkey','479f7bf68cd442c9945176141de92e92');
+  }
+  // Auto-load cached historical data silently on startup
+  loadHistoricalData(false);
 });
 
 // ============================================================
@@ -733,6 +766,14 @@ function updateMarketMode(){
 // ============================================================
 // STRIKE AUTO-SUGGESTION
 // ============================================================
+function onEmChange(){
+  const em = parseFloat(document.getElementById('estimatedMove')?.value);
+  const price = parseFloat(document.getElementById('price')?.value);
+  // Refresh scenario grid live as user types
+  const sg = document.getElementById('scenarioGridContent');
+  if(sg && window._arthaHist) sg.innerHTML = renderScenarioGrid(window._arthaHist);
+}
+
 function onPriceChange(){
   const p=parseFloat(document.getElementById('price').value);
   if(!p||isNaN(p)){clearHints();return;}
@@ -742,6 +783,9 @@ function onPriceChange(){
   document.getElementById('shortStrikeLabel').textContent=`$${short}`;
   document.getElementById('suggestedStrikes').textContent=`$${atm}/$${short} spread`;
   calcDebit();
+  // Refresh scenario grid live
+  const sg = document.getElementById('scenarioGridContent');
+  if(sg && window._arthaHist) sg.innerHTML = renderScenarioGrid(window._arthaHist);
 }
 function clearHints(){['strikeHint','longStrikeLabel','shortStrikeLabel','suggestedStrikes'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='';});}
 function calcDebit(){
@@ -786,6 +830,24 @@ function saveApiKey(){
   document.getElementById('apiKeyInput').value='';
   showToast('API key saved successfully','success');
 }
+function saveTdKey(){
+  const k = document.getElementById('tdKeyInput') && document.getElementById('tdKeyInput').value.trim();
+  if(!k){ alert('Paste your Twelve Data API key first'); return; }
+  localStorage.setItem('artha_tdkey', k);
+  document.getElementById('tdKeyInput').value='';
+  showToast('Twelve Data key saved — loading data...', 'success');
+  loadHistoricalData(true);
+}
+
+function saveAvKey(){
+  const k = document.getElementById('avKeyInput') && document.getElementById('avKeyInput').value.trim();
+  if(!k){ alert('Paste your Alpha Vantage API key first'); return; }
+  localStorage.setItem('artha_avkey', k);
+  document.getElementById('avKeyInput').value='';
+  showToast('Alpha Vantage key saved — loading data...', 'success');
+  loadHistoricalData(true);
+}
+
 function checkApiKey(){
   const has=apiKey&&apiKey.startsWith('sk-ant');
   document.getElementById('setupBanner').style.display=has?'none':'flex';
@@ -867,7 +929,9 @@ async function runAnalysis(){
   document.getElementById('analyzeBtn').disabled=true;
   animateLoading();
 
-  const prompt=buildPrompt({ticker:selectedTicker,day:selectedDay,price,vix,ivRank,longStrike,shortStrike,netDebit,maxProfit,maxLoss,maxContracts,accountSize,riskPct,maxRiskDollars,isPreMarket,hasLegs,journalSummary});
+  const estimatedMove = parseFloat(document.getElementById('estimatedMove')?.value)||null;
+  const esOvernight   = parseFloat(document.getElementById('esOvernight')?.value)||null;
+  const prompt=buildPrompt({ticker:selectedTicker,day:selectedDay,price,vix,ivRank,longStrike,shortStrike,netDebit,maxProfit,maxLoss,maxContracts,accountSize,riskPct,maxRiskDollars,isPreMarket,hasLegs,journalSummary,estimatedMove,esOvernight});
 
   try {
     updateStatus('Calling Claude API...');
@@ -1060,6 +1124,11 @@ LIVE MARKET DATA:
 - Suggested strikes: $${d.longStrike}/$${d.shortStrike} bull call spread
 ${d.hasLegs?`- Net debit: $${d.netDebit?.toFixed(2)}/contract\n- Max profit: $${d.maxProfit} | Max loss: $${d.maxLoss}`:'- Option legs not provided (pre-market/prep mode)'}
 - Account: $${d.accountSize} | Risk: ${d.riskPct}% = $${d.maxRiskDollars} max${d.maxContracts?`\n- Max safe contracts: ${d.maxContracts}`:''}
+${d.estimatedMove ? `- Estimated Move (EM): $${d.estimatedMove} — upside target $${(d.price+d.estimatedMove).toFixed(2)}, downside $${(d.price-d.estimatedMove).toFixed(2)}` : '- Estimated Move: not provided'}
+${d.esOvernight !== null ? `- ES futures overnight: ${d.esOvernight>0?'+':''}${d.esOvernight}% (${d.esOvernight>0.2?'bullish gap signal':d.esOvernight<-0.2?'bearish gap signal':'neutral, no directional bias from ES'})` : '- ES futures overnight: not provided'}
+
+REAL HISTORICAL OHLC ANALYSIS (computed from actual price data):
+${buildHistSummary()}
 
 PERSONAL TRADE JOURNAL:
 ${d.journalSummary}
@@ -1147,6 +1216,7 @@ function renderResults(d,inputs){
       <button class="tab" onclick="switchTab('plan',this)">✅ Day Plan</button>
       <button class="tab" onclick="switchTab('midtrade',this)">⏱ Mid-Trade</button>
       <button class="tab" onclick="switchTab('journal',this)">📓 Journal</button>
+      <button class="tab" onclick="switchTab('hist',this)">📈 History</button>
     </div>
 
     <!-- TRADE TAB -->
@@ -1301,6 +1371,11 @@ function renderResults(d,inputs){
         <div style="text-align:center;padding:20px;color:var(--text3);">Loading journal...</div>
       </div>
     </div>
+
+    <!-- HISTORICAL TAB -->
+    <div id="tab-hist" class="tab-pane">
+      ${renderHistTab()}
+    </div>
   `;
   loadJournalTab();
 }
@@ -1419,6 +1494,650 @@ function exportCSV(){
 }
 
 // ============================================================
+// HISTORICAL DATA ENGINE
+// ============================================================
+const HIST_CACHE_KEY = 'artha_hist_v2';
+const HIST_CACHE_DAYS = 1; // refresh daily
+
+async function loadHistoricalData(forceRefresh=false) {
+  const btn = document.getElementById('histBtn');
+  const status = document.getElementById('histStatus');
+  if(btn) { btn.textContent='Loading...'; btn.disabled=true; }
+  if(status) { status.textContent='Fetching...'; status.style.color='var(--amber)'; }
+
+  try {
+    // Check cache first
+    if(!forceRefresh) {
+      const cached = localStorage.getItem(HIST_CACHE_KEY);
+      if(cached) {
+        const parsed = JSON.parse(cached);
+        const age = (Date.now() - parsed.ts) / (1000*60*60);
+        if(age < 24) {
+          window._arthaHist = parsed.data;
+          updateHistStatus(parsed.data, status, btn);
+          return parsed.data;
+        }
+      }
+    }
+
+    const ticker = selectedTicker || 'IWM';
+    const TD_DEFAULT = '479f7bf68cd442c9945176141de92e92';
+    const tdKey = localStorage.getItem('artha_tdkey') || TD_DEFAULT;
+    const avKey = localStorage.getItem('artha_avkey') || '';
+    let ohlcv = null;
+
+    // Source 1: Twelve Data — requires free key from twelvedata.com
+    if(tdKey && tdKey.length > 10) {
+      try {
+        const url = 'https://api.twelvedata.com/time_series?symbol='+ticker+'&interval=1day&outputsize=500&apikey='+tdKey;
+        const r = await fetch(url);
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        const d = await r.json();
+        if(d.status === 'error') throw new Error(d.message || 'API error');
+        if(d.values && d.values.length > 20) {
+          ohlcv = d.values.slice().reverse().map(function(v) {
+            var date = new Date(v.datetime);
+            var o=parseFloat(v.open), h=parseFloat(v.high), l=parseFloat(v.low), c=parseFloat(v.close);
+            return { date:v.datetime, dow:date.getDay(), open:o, high:h, low:l, close:c,
+              volume:parseFloat(v.volume||0), change:c-o, changePct:((c-o)/o)*100, range:h-l };
+          });
+          console.log('[Artha] Twelve Data: '+ohlcv.length+' days');
+        }
+      } catch(e) { console.warn('[Artha] Twelve Data failed:', e.message); }
+    }
+
+    // Source 2: Alpha Vantage — requires free key from alphavantage.co
+    if(!ohlcv && avKey && avKey.length > 10) {
+      try {
+        const url = 'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol='+ticker+'&outputsize=full&apikey='+avKey;
+        const r = await fetch(url);
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        const d = await r.json();
+        if(d['Note']) throw new Error('Rate limited: '+d['Note']);
+        const series = d['Time Series (Daily)'];
+        if(series && Object.keys(series).length > 20) {
+          ohlcv = Object.entries(series).sort(function(a,b){return a[0]<b[0]?-1:1;}).map(function(entry) {
+            var dt=entry[0], v=entry[1];
+            var date=new Date(dt);
+            var o=parseFloat(v['1. open']), h=parseFloat(v['2. high']), l=parseFloat(v['3. low']), c=parseFloat(v['4. close']);
+            return { date:dt, dow:date.getDay(), open:o, high:h, low:l, close:c,
+              volume:parseFloat(v['6. volume']||0), change:c-o, changePct:((c-o)/o)*100, range:h-l };
+          });
+          console.log('[Artha] Alpha Vantage: '+ohlcv.length+' days');
+        }
+      } catch(e) { console.warn('[Artha] Alpha Vantage failed:', e.message); }
+    }
+
+    // No key or both failed — throw descriptive error
+    if(!ohlcv || ohlcv.length < 20) {
+      var hasKey = (tdKey && tdKey.length > 10) || (avKey && avKey.length > 10);
+      if(!hasKey) {
+        throw new Error('NO_KEY');
+      } else {
+        throw new Error('Data fetch failed. Check your API key is valid and has remaining credits.');
+      }
+    }
+
+    // Compute analytics
+    const analytics = computeAnalytics(ohlcv, ticker);
+    
+    // Cache it
+    localStorage.setItem(HIST_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: analytics }));
+    window._arthaHist = analytics;
+    updateHistStatus(analytics, status, btn);
+    showToast(`${closes.length} days of ${ticker} data loaded`, 'success');
+    return analytics;
+
+  } catch(err) {
+    console.error('[Artha Historical]', err);
+    if(status) { status.textContent='Key needed'; status.style.color='var(--amber-text)'; status.style.background='var(--amber-light)'; status.style.border='1px solid var(--amber-mid)'; }
+    if(btn) { btn.textContent='↓ Load History'; btn.disabled=false; }
+    if(err.message === 'NO_KEY') {
+      // Show setup card in History tab
+      var histEl = document.getElementById('tab-hist');
+      if(histEl) histEl.innerHTML = setupCard();
+      showToast('Add a free API key to load historical data', 'warn');
+    } else {
+      showToast('Historical data: '+err.message, 'warn');
+    }
+    return null;
+  }
+}
+
+function computeAnalytics(ohlcv, ticker) {
+  const closes = ohlcv.map(d=>d.close);
+  const n = ohlcv.length;
+
+  // ── Moving averages ─────────────────────────────────────
+  function sma(arr, period) {
+    if(arr.length < period) return null;
+    return arr.slice(-period).reduce((a,b)=>a+b,0) / period;
+  }
+  const ma20  = sma(closes, 20);
+  const ma50  = sma(closes, 50);
+  const ma200 = sma(closes, 200);
+  const currentClose = closes[n-1];
+  const prevClose = closes[n-2];
+
+  // ── RSI (14) ─────────────────────────────────────────────
+  function computeRSI(arr, period=14) {
+    let gains=0, losses=0;
+    const slice = arr.slice(-period-1);
+    for(let i=1; i<slice.length; i++) {
+      const d = slice[i]-slice[i-1];
+      if(d>0) gains+=d; else losses+=Math.abs(d);
+    }
+    const rs = gains/period / (losses/period || 0.001);
+    return Math.round(100 - (100/(1+rs)));
+  }
+  const rsi14 = computeRSI(closes);
+
+  // ── Support & Resistance ──────────────────────────────────
+  function findLevels(ohlcv, lookback=120) {
+    const recent = ohlcv.slice(-lookback);
+    const levels = [];
+    for(let i=2; i<recent.length-2; i++) {
+      const h = recent[i].high;
+      const l = recent[i].low;
+      // Local high (resistance)
+      if(h > recent[i-1].high && h > recent[i-2].high &&
+         h > recent[i+1].high && h > recent[i+2].high) {
+        levels.push({ price: Math.round(h*100)/100, type: 'resistance' });
+      }
+      // Local low (support)
+      if(l < recent[i-1].low && l < recent[i-2].low &&
+         l < recent[i+1].low && l < recent[i+2].low) {
+        levels.push({ price: Math.round(l*100)/100, type: 'support' });
+      }
+    }
+    // Cluster nearby levels (within $2)
+    const clustered = [];
+    levels.forEach(lv => {
+      const existing = clustered.find(c=>Math.abs(c.price-lv.price)<2 && c.type===lv.type);
+      if(existing) { existing.count=(existing.count||1)+1; existing.price=(existing.price+lv.price)/2; }
+      else clustered.push({...lv, count:1});
+    });
+    return clustered.sort((a,b)=>b.count-a.count).slice(0,8);
+  }
+  const keyLevels = findLevels(ohlcv);
+
+  // ── 52-week high/low ──────────────────────────────────────
+  const yr = ohlcv.slice(-252);
+  const high52w = Math.max(...yr.map(d=>d.high));
+  const low52w  = Math.min(...yr.map(d=>d.low));
+
+  // ── Average Daily Range ───────────────────────────────────
+  const adr20 = ohlcv.slice(-20).reduce((a,d)=>a+d.range,0)/20;
+  const adr5  = ohlcv.slice(-5).reduce((a,d)=>a+d.range,0)/5;
+
+  // ── Day-of-week stats ─────────────────────────────────────
+  const dowNames = ['','Mon','Tue','Wed','Thu','Fri'];
+  const dowStats = {};
+  for(let d=1; d<=5; d++) {
+    const days = ohlcv.filter(o=>o.dow===d && o.changePct !== undefined);
+    if(!days.length) continue;
+    const wins = days.filter(o=>o.change>0).length;
+    const avgMove = days.reduce((a,o)=>a+o.changePct,0)/days.length;
+    const avgRange = days.reduce((a,o)=>a+o.range,0)/days.length;
+    dowStats[dowNames[d]] = {
+      winRate: Math.round(wins/days.length*100),
+      avgMove: Math.round(avgMove*100)/100,
+      avgRange: Math.round(avgRange*100)/100,
+      count: days.length
+    };
+  }
+
+  // ── FOMC / NFP / Big catalyst day patterns ───────────────
+  // Approximate: use days with large range (top 10%) as proxy for catalyst days
+  const sortedByRange = [...ohlcv].sort((a,b)=>b.range-a.range);
+  const catalystDays = sortedByRange.slice(0, Math.floor(n*0.1));
+  const avgCatalystMove = catalystDays.reduce((a,d)=>a+d.range,0)/catalystDays.length;
+  const catalystUpDays = catalystDays.filter(d=>d.change>0).length;
+
+  // ── Recent momentum ───────────────────────────────────────
+  const last5Closes  = closes.slice(-5);
+  const last5Change  = ((last5Closes[4]-last5Closes[0])/last5Closes[0]*100).toFixed(2);
+  const last20Change = ((closes[n-1]-closes[n-21])/closes[n-21]*100).toFixed(2);
+
+  // ── Trend determination ───────────────────────────────────
+  let trend = 'Neutral';
+  let trendStrength = 'Weak';
+  const aboveMa20 = currentClose > ma20;
+  const aboveMa50 = currentClose > ma50;
+  const aboveMa200 = currentClose > ma200;
+  const maAligned = ma20 > ma50 && ma50 > ma200; // bullish alignment
+  if(aboveMa20 && aboveMa50 && aboveMa200) { trend='Bullish'; trendStrength=maAligned?'Strong':'Moderate'; }
+  else if(!aboveMa20 && !aboveMa50 && !aboveMa200) { trend='Bearish'; trendStrength=!maAligned?'Strong':'Moderate'; }
+  else { trend='Mixed'; trendStrength='Weak'; }
+
+  // ── Optimal spread width based on ADR ────────────────────
+  const recommendedWidth = Math.max(3, Math.min(8, Math.round(adr20 * 0.8)));
+  
+  // ── Volatility regime ─────────────────────────────────────
+  const recentRanges = ohlcv.slice(-20).map(d=>d.range);
+  const olderRanges = ohlcv.slice(-60,-20).map(d=>d.range);
+  const recentAvgRange = recentRanges.reduce((a,b)=>a+b,0)/recentRanges.length;
+  const olderAvgRange = olderRanges.reduce((a,b)=>a+b,0)/olderRanges.length;
+  const volRegime = recentAvgRange > olderAvgRange*1.2 ? 'Expanding' : 
+                   recentAvgRange < olderAvgRange*0.8 ? 'Contracting' : 'Normal';
+
+  // ── NR7 / NR10 (Narrow Range) ────────────────────────────
+  // NR7: today's range is the smallest of the last 7 sessions
+  // NR10: today's range is the smallest of the last 10 sessions
+  const last7Ranges  = ohlcv.slice(-7).map(d=>d.range);
+  const last10Ranges = ohlcv.slice(-10).map(d=>d.range);
+  const todayRange   = ohlcv[n-1].range;
+  const nr7  = todayRange <= Math.min(...last7Ranges);
+  const nr10 = todayRange <= Math.min(...last10Ranges);
+
+  // ── Inside Day / Outside Day ──────────────────────────────
+  // Inside Day:  today's High <= yesterday's High AND today's Low >= yesterday's Low
+  // Outside Day: today's High >= yesterday's High AND today's Low <= yesterday's Low
+  const today     = ohlcv[n-1];
+  const yesterday = ohlcv[n-2];
+  const insideDay  = today.high <= yesterday.high && today.low >= yesterday.low;
+  const outsideDay = today.high >= yesterday.high && today.low <= yesterday.low;
+
+  // ── Consecutive trend days ────────────────────────────────
+  let upStreak=0, downStreak=0;
+  for(let i=n-1;i>=0;i--){
+    if(ohlcv[i].change>0) { if(downStreak>0) break; upStreak++; }
+    else { if(upStreak>0) break; downStreak++; }
+  }
+
+  // ── Gap stats (today vs yesterday close) ─────────────────
+  const todayGap     = today.open - yesterday.close;
+  const todayGapPct  = Math.round((todayGap / yesterday.close)*10000)/100;
+  const gapUp        = todayGap > adr20 * 0.25;
+  const gapDown      = todayGap < -(adr20 * 0.25);
+
+  // ── Historical gap fill rate ──────────────────────────────
+  // Of days with a significant gap, how often did price fill back to prev close?
+  const gapDays = ohlcv.slice(-100).filter((_,i,arr) => {
+    if(i===0) return false;
+    const g = arr[i].open - arr[i-1].close;
+    return Math.abs(g) > adr20 * 0.25;
+  });
+  const gapFillDays = gapDays.filter((d,i,arr) => {
+    if(i===0) return false;
+    const prevClose = ohlcv[ohlcv.indexOf(d)-1]?.close;
+    if(!prevClose) return false;
+    if(d.open > prevClose) return d.low <= prevClose;
+    return d.high >= prevClose;
+  });
+  const gapFillRate = gapDays.length > 5 ? Math.round(gapFillDays.length/gapDays.length*100) : null;
+
+  // ── Scenario grid (Open ± EM scenarios) ──────────────────
+  // Computed later at render time with live EM input — stored as function
+  // Store last 20 daily closes for scenario rendering
+  const last20Closes = ohlcv.slice(-20).map(d=>({ date:d.date, close:d.close, high:d.high, low:d.low, range:d.range }));
+
+  return {
+    ticker, fetchedAt: new Date().toISOString(),
+    totalDays: n,
+    currentClose: Math.round(currentClose*100)/100,
+    prevClose: Math.round(prevClose*100)/100,
+    high52w: Math.round(high52w*100)/100,
+    low52w: Math.round(low52w*100)/100,
+    ma20: ma20 ? Math.round(ma20*100)/100 : null,
+    ma50: ma50 ? Math.round(ma50*100)/100 : null,
+    ma200: ma200 ? Math.round(ma200*100)/100 : null,
+    rsi14,
+    aboveMa20, aboveMa50, aboveMa200,
+    trend, trendStrength, maAligned,
+    adr20: Math.round(adr20*100)/100,
+    adr5: Math.round(adr5*100)/100,
+    last5Change, last20Change,
+    keyLevels,
+    dowStats,
+    avgCatalystMove: Math.round(avgCatalystMove*100)/100,
+    catalystUpPct: Math.round(catalystUpDays/catalystDays.length*100),
+    recommendedWidth,
+    volRegime,
+    nearHigh52w: ((high52w - currentClose)/high52w*100) < 2,
+    nearLow52w: ((currentClose - low52w)/low52w*100) < 5,
+    // Pattern flags
+    nr7, nr10, insideDay, outsideDay,
+    upStreak, downStreak,
+    todayGapPct, gapUp, gapDown,
+    gapFillRate,
+    last20Closes,
+  };
+}
+
+function updateHistStatus(data, statusEl, btnEl) {
+  if(statusEl) {
+    statusEl.textContent = data.totalDays+'d loaded';
+    statusEl.style.color = 'var(--green-text)';
+    statusEl.style.background = 'var(--green-light)';
+    statusEl.style.border = '1px solid var(--green-mid)';
+  }
+  if(btnEl) {
+    btnEl.textContent = '↺ Refresh data';
+    btnEl.disabled = false;
+  }
+}
+
+// Build historical summary string for Claude prompt
+function buildHistSummary() {
+  const h = window._arthaHist;
+  if(!h) return 'No historical data loaded. Ask user to click Load IWM History in sidebar.';
+
+  const levels = h.keyLevels;
+  const resistances = levels.filter(l=>l.type==='resistance').slice(0,3).map(l=>`$${l.price}`).join(', ');
+  const supports = levels.filter(l=>l.type==='support').slice(0,3).map(l=>`$${l.price}`).join(', ');
+  const dow = h.dowStats;
+  const todayDow = ['','Mon','Tue','Wed','Thu','Fri'][new Date().getDay()] || 'Mon';
+  const todayDowStat = dow[todayDow] || {};
+
+  return `REAL HISTORICAL DATA (${h.totalDays} trading days of ${h.ticker} OHLC):
+Trend: ${h.trend} (${h.trendStrength}) — price $${h.currentClose} vs MA20 $${h.ma20} / MA50 $${h.ma50} / MA200 $${h.ma200}
+RSI(14): ${h.rsi14} | 52w High: $${h.high52w} | 52w Low: $${h.low52w}
+${h.nearHigh52w?'⚠ NEAR 52-WEEK HIGH — resistance risk':''}${h.nearLow52w?'⚠ NEAR 52-WEEK LOW — support test':''}
+Key resistance levels: ${resistances||'none computed'}
+Key support levels: ${supports||'none computed'}
+Avg Daily Range (20d): $${h.adr20} | Avg Daily Range (5d): $${h.adr5}
+Recommended spread width based on ADR: $${h.recommendedWidth} wide
+Volatility regime: ${h.volRegime}
+5-day momentum: ${h.last5Change}% | 20-day momentum: ${h.last20Change}%
+Today is ${todayDow} — historical win rate: ${todayDowStat.winRate||'?'}% | avg move: ${todayDowStat.avgMove||'?'}% | avg range: $${todayDowStat.avgRange||'?'}
+Day-of-week stats: ${Object.entries(dow).map(([d,s])=>`${d}: ${s.winRate}%WR $${s.avgRange}ADR`).join(' | ')}
+Catalyst day stats (top 10% range days): avg move $${h.avgCatalystMove}, bullish ${h.catalystUpPct}% of the time
+PATTERN FLAGS (from actual OHLC — use these for trade bias):
+- NR7: ${h.nr7?'YES — narrowest range in 7 days. Expect a BREAKOUT move. Favor wider spreads.':'No'}
+- NR10: ${h.nr10?'YES — narrowest range in 10 days. High compression, big move likely.':'No'}
+- Inside Day: ${h.insideDay?'YES — price compressed inside yesterday. Breakout pending.':'No'}
+- Outside Day: ${h.outsideDay?'YES — price engulfed yesterday. Trend continuation likely.':'No'}
+- Gap today: ${h.gapUp?'GAP UP '+h.todayGapPct+'%':h.gapDown?'GAP DOWN '+Math.abs(h.todayGapPct)+'%':'No significant gap ('+h.todayGapPct+'%)'}
+- Historical gap fill rate: ${h.gapFillRate!==null?h.gapFillRate+'% of gaps fill back to prev close':'insufficient data'}
+- Current streak: ${h.upStreak>1?h.upStreak+' consecutive UP days':h.downStreak>1?h.downStreak+' consecutive DOWN days':'No streak'}`;
+}
+
+// Render the Historical Intelligence tab
+function setupCard() {
+  return '<div class="card" style="border:1.5px solid var(--amber-mid);border-radius:var(--radius-xl);">'
+    + '<div style="text-align:center;padding:24px 16px 16px;">'
+    + '<div style="font-size:36px;margin-bottom:10px;">📊</div>'
+    + '<div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px;">Free API key needed for historical data</div>'
+    + '<div style="font-size:12px;color:var(--text3);line-height:1.7;max-width:400px;margin:0 auto 18px;">Historical OHLC powers NR7/Inside Day pattern flags, real support/resistance levels, and the scenario grid. Choose one free source below.</div>'
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 16px 20px;">'
+
+    + '<div style="background:var(--blue-light);border:1.5px solid var(--blue-mid);border-radius:var(--radius-lg);padding:14px;">'
+    + '<div style="font-size:13px;font-weight:600;color:var(--blue-text);margin-bottom:4px;">Twelve Data</div>'
+    + '<div style="font-size:11px;color:var(--text2);line-height:1.5;margin-bottom:10px;">800 free calls/day · 2 years history · Takes 60 sec to set up</div>'
+    + '<div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">Steps:</div>'
+    + '<div style="font-size:11px;color:var(--text2);line-height:1.8;">'
+    + '1. Go to <strong>twelvedata.com</strong><br>'
+    + '2. Click "Get free API key"<br>'
+    + '3. Sign up (no credit card)<br>'
+    + '4. Copy your API key<br>'
+    + '5. Paste in sidebar → Save'
+    + '</div>'
+    + '</div>'
+
+    + '<div style="background:var(--green-light);border:1.5px solid var(--green-mid);border-radius:var(--radius-lg);padding:14px;">'
+    + '<div style="font-size:13px;font-weight:600;color:var(--green-text);margin-bottom:4px;">Alpha Vantage</div>'
+    + '<div style="font-size:11px;color:var(--text2);line-height:1.5;margin-bottom:10px;">25 free calls/day · Full history · Also free, no card</div>'
+    + '<div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">Steps:</div>'
+    + '<div style="font-size:11px;color:var(--text2);line-height:1.8;">'
+    + '1. Go to <strong>alphavantage.co</strong><br>'
+    + '2. Click "Get free API key"<br>'
+    + '3. Fill in your details<br>'
+    + '4. Copy your API key<br>'
+    + '5. Paste in sidebar → Save (AV key field)'
+    + '</div>'
+    + '</div>'
+
+    + '</div>'
+    + '<div style="padding:0 16px 16px;text-align:center;">'
+    + '<div style="font-size:11px;color:var(--text3);margin-bottom:8px;">Paste your key in the sidebar Historical Data section, then click Load IWM History.</div>'
+    + '<button class="btn btn-blue btn-sm" onclick="loadHistoricalData(true)">Try loading again</button>'
+    + '</div>'
+    + '</div>';
+}
+
+function renderHistTab() {
+  const h = window._arthaHist;
+  if(!h) { return setupCard(); }
+
+  const levels = h.keyLevels;
+  const resistances = levels.filter(l=>l.type==='resistance').slice(0,4);
+  const supports = levels.filter(l=>l.type==='support').slice(0,4);
+
+  const dowRows = Object.entries(h.dowStats).map(([day, s]) => `
+    <div class="t-row">
+      <span class="t-label">${day}</span>
+      <span class="t-val ${s.winRate>=55?'green':s.winRate<=45?'red':'amber'}">${s.winRate}% win rate</span>
+      <span class="t-val">$${s.avgRange} avg range</span>
+      <span class="t-val ${s.avgMove>=0?'green':'red'}">${s.avgMove>=0?'+':''}${s.avgMove}% avg move</span>
+    </div>`).join('');
+
+  const trendColor = h.trend==='Bullish'?'green':h.trend==='Bearish'?'red':'amber';
+  const fetchDate = new Date(h.fetchedAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+
+  return `
+    <div class="card card-teal">
+      <div class="card-head">
+        <div class="card-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+        <div class="card-title">Trend & Moving Averages</div>
+        <span class="tag ${trendColor}" style="margin-left:auto;">${h.trend} — ${h.trendStrength}</span>
+      </div>
+      <div class="metrics-4" style="margin-bottom:12px;">
+        <div class="metric"><div class="m-label">MA 20</div><div class="m-val ${h.aboveMa20?'green':'red'}">$${h.ma20}</div><div class="m-sub">${h.aboveMa20?'Above ✓':'Below ✗'}</div></div>
+        <div class="metric"><div class="m-label">MA 50</div><div class="m-val ${h.aboveMa50?'green':'red'}">$${h.ma50}</div><div class="m-sub">${h.aboveMa50?'Above ✓':'Below ✗'}</div></div>
+        <div class="metric"><div class="m-label">MA 200</div><div class="m-val ${h.aboveMa200?'green':'red'}">$${h.ma200}</div><div class="m-sub">${h.aboveMa200?'Above ✓':'Below ✗'}</div></div>
+        <div class="metric"><div class="m-label">RSI 14</div><div class="m-val ${h.rsi14>70?'red':h.rsi14<30?'green':'amber'}">${h.rsi14}</div><div class="m-sub">${h.rsi14>70?'Overbought':h.rsi14<30?'Oversold':'Neutral'}</div></div>
+      </div>
+      <div class="metrics-2">
+        <div class="metric"><div class="m-label">52-week high</div><div class="m-val ${h.nearHigh52w?'amber':''}">$${h.high52w}</div><div class="m-sub">${h.nearHigh52w?'⚠ Within 2% — resistance':'—'}</div></div>
+        <div class="metric"><div class="m-label">52-week low</div><div class="m-val">$${h.low52w}</div><div class="m-sub">${h.nearLow52w?'⚠ Near support zone':'—'}</div></div>
+      </div>
+    </div>
+
+    <div class="metrics-2">
+      <div class="card card-blue">
+        <div class="card-head">
+          <div class="card-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
+          <div class="card-title">Key Resistance</div>
+        </div>
+        ${resistances.map(l=>`
+          <div class="t-row">
+            <span class="t-label">$${Math.round(l.price*100)/100}</span>
+            <span class="t-val red">${'●'.repeat(Math.min(l.count,5))} ${l.count} touches</span>
+          </div>`).join('') || '<div style="color:var(--text3);font-size:12px;">Loading...</div>'}
+      </div>
+      <div class="card card-green">
+        <div class="card-head">
+          <div class="card-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
+          <div class="card-title">Key Support</div>
+        </div>
+        ${supports.map(l=>`
+          <div class="t-row">
+            <span class="t-label">$${Math.round(l.price*100)/100}</span>
+            <span class="t-val green">${'●'.repeat(Math.min(l.count,5))} ${l.count} touches</span>
+          </div>`).join('') || '<div style="color:var(--text3);font-size:12px;">Loading...</div>'}
+      </div>
+    </div>
+
+    <div class="card card-blue">
+      <div class="card-head">
+        <div class="card-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
+        <div class="card-title">Day-of-Week Historical Stats</div>
+      </div>
+      <div style="display:grid;grid-template-columns:60px 1fr 1fr 1fr;gap:0;margin-bottom:4px;font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:4px 0;border-bottom:1px solid var(--border);">
+        <span>Day</span><span>Win rate</span><span>Avg range</span><span>Avg move</span>
+      </div>
+      ${dowRows}
+    </div>
+
+    <div class="metrics-2">
+      <div class="card card-amber">
+        <div class="card-head">
+          <div class="card-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+          <div class="card-title">Volatility & Range</div>
+        </div>
+        <div class="t-row"><span class="t-label">ADR (20-day)</span><span class="t-val amber">$${h.adr20}</span></div>
+        <div class="t-row"><span class="t-label">ADR (5-day)</span><span class="t-val">${h.adr5>h.adr20?'↑':'↓'} $${h.adr5}</span></div>
+        <div class="t-row"><span class="t-label">Vol regime</span><span class="t-val ${h.volRegime==='Expanding'?'red':h.volRegime==='Contracting'?'green':'amber'}">${h.volRegime}</span></div>
+        <div class="t-row"><span class="t-label">Catalyst days</span><span class="t-val">$${h.avgCatalystMove} avg move</span></div>
+        <div class="t-row"><span class="t-label">Catalyst bullish</span><span class="t-val ${h.catalystUpPct>=50?'green':'red'}">${h.catalystUpPct}% of time</span></div>
+      </div>
+      <div class="card card-green">
+        <div class="card-head">
+          <div class="card-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg></div>
+          <div class="card-title">Spread Recommendation</div>
+        </div>
+        <div style="text-align:center;padding:10px 0;">
+          <div style="font-size:42px;font-weight:700;color:var(--teal-text);font-family:var(--serif);">$${h.recommendedWidth}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px;">Recommended spread width</div>
+          <div style="font-size:11px;color:var(--text3);">Based on 20-day ADR of $${h.adr20}</div>
+        </div>
+        <div class="t-row"><span class="t-label">5-day momentum</span><span class="t-val ${parseFloat(h.last5Change)>=0?'green':'red'}">${parseFloat(h.last5Change)>=0?'+':''}${h.last5Change}%</span></div>
+        <div class="t-row"><span class="t-label">20-day momentum</span><span class="t-val ${parseFloat(h.last20Change)>=0?'green':'red'}">${parseFloat(h.last20Change)>=0?'+':''}${h.last20Change}%</span></div>
+      </div>
+    </div>
+
+    <div class="card card-teal" style="margin-top:0;">
+      <div class="card-head">
+        <div class="card-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><path d="M2 20h.01M7 20v-4M12 20V10M17 20V4M22 20h.01"/></svg></div>
+        <div class="card-title">Pattern flags — today</div>
+        <span style="font-size:10px;color:var(--text3);margin-left:auto;">From last ${h.totalDays} days OHLC</span>
+      </div>
+      <div class="metrics-2" style="margin-bottom:10px;">
+        <div class="metric" style="border:1.5px solid ${h.nr7?'var(--amber-mid)':'var(--border)'}; background:${h.nr7?'var(--amber-light)':'var(--bg)'};">
+          <div class="m-label">NR7 — Narrow Range 7</div>
+          <div class="m-val ${h.nr7?'amber':''}">${h.nr7?'YES ⚡':'No'}</div>
+          <div class="m-sub">${h.nr7?'Smallest range in 7 days — breakout imminent':'Range normal vs last 7 days'}</div>
+        </div>
+        <div class="metric" style="border:1.5px solid ${h.nr10?'var(--amber-mid)':'var(--border)'}; background:${h.nr10?'var(--amber-light)':'var(--bg)'};">
+          <div class="m-label">NR10 — Narrow Range 10</div>
+          <div class="m-val ${h.nr10?'amber':''}">${h.nr10?'YES ⚡':'No'}</div>
+          <div class="m-sub">${h.nr10?'Smallest range in 10 days — high compression':'Range normal vs last 10 days'}</div>
+        </div>
+        <div class="metric" style="border:1.5px solid ${h.insideDay?'var(--blue-mid)':'var(--border)'}; background:${h.insideDay?'var(--blue-light)':'var(--bg)'};">
+          <div class="m-label">Inside Day</div>
+          <div class="m-val ${h.insideDay?'blue':''}">${h.insideDay?'YES':'No'}</div>
+          <div class="m-sub">${h.insideDay?'Price inside yesterday — breakout pending':'Not an inside day'}</div>
+        </div>
+        <div class="metric" style="border:1.5px solid ${h.outsideDay?'var(--purple-mid)':'var(--border)'}; background:${h.outsideDay?'var(--purple-light)':'var(--bg)'};">
+          <div class="m-label">Outside Day</div>
+          <div class="m-val ${h.outsideDay?'purple':''}">${h.outsideDay?'YES':'No'}</div>
+          <div class="m-sub">${h.outsideDay?'Engulfed yesterday — trend continuation':'Not an outside day'}</div>
+        </div>
+      </div>
+      <div class="metrics-2">
+        <div class="metric">
+          <div class="m-label">Today gap</div>
+          <div class="m-val ${h.gapUp?'green':h.gapDown?'red':'amber'}">${h.gapUp?'Gap Up '+h.todayGapPct+'%':h.gapDown?'Gap Down '+Math.abs(h.todayGapPct)+'%':'Flat '+h.todayGapPct+'%'}</div>
+          <div class="m-sub">Gap fill rate (hist): ${h.gapFillRate!==null?h.gapFillRate+'%':'N/A'}</div>
+        </div>
+        <div class="metric">
+          <div class="m-label">Price streak</div>
+          <div class="m-val ${h.upStreak>1?'green':h.downStreak>1?'red':'amber'}">${h.upStreak>1?'+'+h.upStreak+' days up':h.downStreak>1?h.downStreak+' days down':'No streak'}</div>
+          <div class="m-sub">Consecutive closes in same direction</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-blue">
+      <div class="card-head">
+        <div class="card-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg></div>
+        <div class="card-title">Scenario grid</div>
+        <span style="font-size:10px;color:var(--text3);margin-left:auto;">Based on ADR + Estimated Move</span>
+      </div>
+      <div id="scenarioGridContent">${renderScenarioGrid(h)}</div>
+    </div>
+
+    <div style="font-size:10px;color:var(--text3);text-align:right;margin-top:4px;">
+      ${h.totalDays} trading days · ${h.ticker} · Last fetched: ${fetchDate} · 
+      <span style="cursor:pointer;color:var(--blue-text);" onclick="loadHistoricalData(true).then(()=>renderHistTabInto())">Refresh</span>
+    </div>`;
+}
+
+function renderScenarioGrid(h) {
+  const price = parseFloat(document.getElementById('price') && document.getElementById('price').value) || h.currentClose;
+  const emInput = document.getElementById('estimatedMove');
+  const em = (emInput && parseFloat(emInput.value)) || h.adr20;
+  const emLabel = (emInput && parseFloat(emInput.value)) ? 'EM' : 'ADR';
+  const shortStrike = Math.round(price) + 4;
+
+  const scenarios = [
+    { label:'Bear case', open: price - em,  pct: -em/price*100 },
+    { label:'Flat open', open: price,        pct: 0 },
+    { label:'Bull case', open: price + em,   pct: +em/price*100 },
+  ];
+
+  const upRatio    = h.adr20 * 0.6;
+  const downRatio  = h.adr20 * 0.55;
+  const closeRatio = h.adr20 * 0.15;
+
+  const rows = scenarios.map(function(s) {
+    var o        = Math.round(s.open * 100) / 100;
+    var estHigh  = Math.round((o + upRatio)  * 100) / 100;
+    var estLow   = Math.round((o - downRatio)* 100) / 100;
+    var estClose = Math.round((o + closeRatio*(s.pct >= 0 ? 1 : -1)) * 100) / 100;
+    var spreadHit = estHigh >= shortStrike;
+    return { label:s.label, pct:s.pct, o:o, estHigh:estHigh, estLow:estLow, estClose:estClose, spreadHit:spreadHit };
+  });
+
+  var hdrSty = 'font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;padding:6px 8px;text-align:center;';
+  var celSty = 'font-size:12px;padding:7px 8px;border-bottom:.5px solid var(--border);text-align:center;';
+  var emNote = (emInput && parseFloat(emInput.value)) ? '' : '<span style="color:var(--amber-text);"> — add EM in sidebar for precision</span>';
+
+  var html = '<div style="font-size:11px;color:var(--text3);margin-bottom:10px;">'
+    + 'Entry: <strong style="color:var(--text);">$' + price.toFixed(2) + '</strong> &nbsp;·&nbsp; '
+    + emLabel + ': <strong style="color:var(--text);">$' + em.toFixed(2) + '</strong> &nbsp;·&nbsp; '
+    + 'Short strike: <strong style="color:var(--text);">$' + shortStrike + '</strong>'
+    + emNote + '</div>';
+
+  html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">';
+  html += '<tr style="background:var(--bg);">'
+    + '<th style="' + hdrSty + 'text-align:left;">Scenario</th>'
+    + '<th style="' + hdrSty + '">Open</th>'
+    + '<th style="' + hdrSty + '">Est High</th>'
+    + '<th style="' + hdrSty + '">Est Low</th>'
+    + '<th style="' + hdrSty + '">Est Close</th>'
+    + '<th style="' + hdrSty + '">Hits $' + shortStrike + '?</th>'
+    + '</tr>';
+
+  rows.forEach(function(r, i) {
+    var labelColor = r.pct > 0 ? 'var(--green-text)' : r.pct < 0 ? 'var(--red-text)' : 'var(--text)';
+    var rowBg = i === 1 ? 'var(--surface)' : 'var(--bg)';
+    var hitBg = r.spreadHit ? 'background:var(--green-light);color:var(--green-text);' : 'background:var(--red-light);color:var(--red-text);';
+    html += '<tr style="background:' + rowBg + ';">';
+    html += '<td style="' + celSty + 'text-align:left;">'
+      + '<div style="font-weight:600;color:' + labelColor + ';">' + r.label + '</div>'
+      + '<div style="font-size:10px;color:var(--text3);">' + (r.pct >= 0 ? '+' : '') + r.pct.toFixed(1) + '% from now</div>'
+      + '</td>';
+    html += '<td style="' + celSty + 'font-weight:600;">$' + r.o.toFixed(2) + '</td>';
+    html += '<td style="' + celSty + 'color:var(--green-text);">$' + r.estHigh.toFixed(2) + '</td>';
+    html += '<td style="' + celSty + 'color:var(--red-text);">$' + r.estLow.toFixed(2) + '</td>';
+    html += '<td style="' + celSty + '">$' + r.estClose.toFixed(2) + '</td>';
+    html += '<td style="' + celSty + '">'
+      + '<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;' + hitBg + '">'
+      + (r.spreadHit ? '✓ Yes' : '✗ No') + '</span></td>';
+    html += '</tr>';
+  });
+
+  html += '</table></div>';
+  html += '<div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.5;">'
+    + 'High/Low estimated using 20-day ADR of $' + h.adr20 + '. '
+    + '"Hits $' + shortStrike + '" = Est High reaches your short strike for max profit.'
+    + '</div>';
+
+  return html;
+}
+
+function renderHistTabInto() {
+  const el = document.getElementById('tab-hist');
+  if(el) el.innerHTML = renderHistTab();
+  // Also refresh scenario grid if price changes
+  const sg = document.getElementById('scenarioGridContent');
+  if(sg && window._arthaHist) sg.innerHTML = renderScenarioGrid(window._arthaHist);
+}
+
+// ============================================================
 // TAB SWITCHER
 // ============================================================
 function switchTab(name,el){
@@ -1427,7 +2146,11 @@ function switchTab(name,el){
   el.classList.add('active');
   const pane=document.getElementById('tab-'+name);
   if(pane)pane.classList.add('active');
-  if(name==='journal')loadJournalTab();
+  if(name==='journal') loadJournalTab();
+  if(name==='hist') {
+    if(!window._arthaHist) loadHistoricalData().then(()=>renderHistTabInto());
+    else renderHistTabInto();
+  }
 }
 
 // ============================================================
