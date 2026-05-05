@@ -506,17 +506,18 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
         <div class="s-title">Ticker & Day</div>
         <div class="mode-pill pre" id="modeBadge">PRE-MARKET</div>
       </div>
-      <div class="ticker-row" id="tickerRow">
+      <div class="ticker-row" id="tickerRow" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:4px;">
         <div class="ticker-btn active" data-ticker="IWM">IWM</div>
         <div class="ticker-btn" data-ticker="SPY">SPY</div>
         <div class="ticker-btn" data-ticker="QQQ">QQQ</div>
       </div>
+      <div class="ticker-row" id="tickerRow2" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:6px;">
+        <div class="ticker-btn" data-ticker="TSLA">TSLA</div>
+        <div class="ticker-btn" data-ticker="MU">MU</div>
+        <div class="ticker-btn" data-ticker="META">META</div>
+      </div>
       <div class="day-grid" id="dayGrid">
-        <div class="day-btn active" data-day="MON 5/4" data-cat="ISM"><div class="dn">MON</div><div class="dd">5/4</div><div class="dc">ISM</div></div>
-        <div class="day-btn" data-day="TUE 5/5" data-cat="JOLTS"><div class="dn">TUE</div><div class="dd">5/5</div><div class="dc">JOLTS</div></div>
-        <div class="day-btn fomc" data-day="WED 5/6" data-cat="FOMC"><div class="dn">WED</div><div class="dd">5/6</div><div class="dc">FOMC⚡</div></div>
-        <div class="day-btn" data-day="THU 5/7" data-cat="Claims"><div class="dn">THU</div><div class="dd">5/7</div><div class="dc">Claims</div></div>
-        <div class="day-btn" data-day="FRI 5/8" data-cat="NFP"><div class="dn">FRI</div><div class="dd">5/8</div><div class="dc">NFP⚡</div></div>
+        <!-- populated dynamically by buildWeekDays() -->
       </div>
       <div style="margin-top:8px;">
         <div class="mode-desc" id="modeDesc">Pre-market mode — enter price + VIX for directional prep.</div>
@@ -685,7 +686,7 @@ const SUPA_HEADERS = {
 };
 
 let selectedTicker = 'IWM';
-let selectedDay = 'MON 5/4';
+let selectedDay = '';
 let apiKey = localStorage.getItem('artha_apikey') || '';
 let isPreMarket = false;
 
@@ -777,11 +778,18 @@ function onEmChange(){
 function onPriceChange(){
   const p=parseFloat(document.getElementById('price').value);
   if(!p||isNaN(p)){clearHints();return;}
-  const atm=Math.round(p), short=atm+4;
+  const atm=Math.round(p);
+  // Spread width: stocks get wider suggestions based on price level
+  const stockTickers=['TSLA','MU','META'];
+  const isStock = stockTickers.indexOf(selectedTicker) !== -1;
+  // Width: ETFs ~$4, stocks scale with price (~0.5-1% of price, min $5)
+  const width = isStock ? Math.max(5, Math.round(p * 0.008 / 5) * 5) : 4;
+  const short = atm + width;
   document.getElementById('strikeHint').textContent=`→ $${atm}C / $${short}C`;
   document.getElementById('longStrikeLabel').textContent=`$${atm}`;
   document.getElementById('shortStrikeLabel').textContent=`$${short}`;
-  document.getElementById('suggestedStrikes').textContent=`$${atm}/$${short} spread`;
+  document.getElementById('suggestedStrikes').textContent=`$${atm}/$${short} spread ($${width} wide)`;
+  // Update the prompt builder strike values
   calcDebit();
   // Refresh scenario grid live
   const sg = document.getElementById('scenarioGridContent');
@@ -803,21 +811,128 @@ function calcDebit(){
 // ============================================================
 // SELECTORS
 // ============================================================
-function initDaySelector(){
-  document.getElementById('dayGrid').addEventListener('click',e=>{
-    const btn=e.target.closest('.day-btn');if(!btn)return;
-    document.querySelectorAll('.day-btn').forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active'); selectedDay=btn.dataset.day;
+function buildWeekDays(){
+  // Determine current week's Mon-Fri in Central Time
+  const now = new Date(new Date().toLocaleString('en-US',{timeZone:'America/Chicago'}));
+  const dow = now.getDay(); // 0=Sun, 1=Mon ... 6=Sat
+  // Find Monday of current week (if weekend, use next Monday)
+  let monday = new Date(now);
+  if(dow === 0) monday.setDate(now.getDate() + 1);       // Sunday → next Mon
+  else if(dow === 6) monday.setDate(now.getDate() + 2);  // Saturday → next Mon
+  else monday.setDate(now.getDate() - (dow - 1));         // Weekday → this Mon
+
+  const days  = ['MON','TUE','WED','THU','FRI'];
+  const fmt   = d => (d.getMonth()+1)+'/'+d.getDate();
+
+  // Known recurring catalysts by day of week (approximate)
+  // Claude will search for exact catalysts — this is just a label hint
+  const weekCats = getWeekCatalysts(monday);
+
+  const grid = document.getElementById('dayGrid');
+  grid.innerHTML = '';
+
+  let todayBtnIndex = -1;
+  const todayStr = fmt(now);
+
+  days.forEach(function(dayName, i){
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    const dateStr   = fmt(d);
+    const dayKey    = dayName + ' ' + dateStr;
+    const cat       = weekCats[i] || '';
+    const isFomc    = cat.includes('FOMC');
+    const isNfp     = cat.includes('NFP');
+    const isToday   = dateStr === todayStr;
+    const isPast    = d < now && !isToday;
+
+    const btn = document.createElement('div');
+    btn.className = 'day-btn' + (isFomc||isNfp?' fomc':'') + (isPast?' past':'');
+    btn.dataset.day = dayKey;
+    btn.dataset.cat = cat;
+    btn.innerHTML =
+      '<div class="dn">'+dayName+'</div>'+
+      '<div class="dd">'+dateStr+'</div>'+
+      '<div class="dc">'+(cat||'—')+'</div>';
+
+    if(isPast) btn.style.opacity = '0.45';
+
+    if(isToday) todayBtnIndex = i;
+    grid.appendChild(btn);
+  });
+
+  // Auto-select today (or Monday if weekend)
+  const btns = grid.querySelectorAll('.day-btn');
+  const selectIdx = todayBtnIndex >= 0 ? todayBtnIndex : 0;
+  if(btns[selectIdx]){
+    btns[selectIdx].classList.add('active');
+    selectedDay = btns[selectIdx].dataset.day;
+  }
+
+  // Reattach listener
+  grid.addEventListener('click', function(e){
+    const btn = e.target.closest('.day-btn');
+    if(!btn || btn.classList.contains('past')) return;
+    grid.querySelectorAll('.day-btn').forEach(function(b){ b.classList.remove('active'); });
+    btn.classList.add('active');
+    selectedDay = btn.dataset.day;
   });
 }
+
+function getWeekCatalysts(monday) {
+  // Returns approximate catalyst labels for Mon-Fri of given week
+  // These are common recurring weekly events — Claude web search confirms exact ones
+  const m = monday.getMonth(); // 0-indexed
+  const d = monday.getDate();
+  const cats = ['','','','',''];
+
+  // FOMC meetings: roughly every 6-7 weeks — mark WED
+  // NFP: first Friday of each month
+  // JOLTS: usually Tuesday ~2nd week
+  // CPI: usually mid-month Wednesday
+  // We use a simple heuristic — Claude's web search corrects the actual catalysts
+
+  // Check if first Friday of month falls in this week
+  const fri = new Date(monday); fri.setDate(d + 4);
+  if(fri.getDate() <= 7) cats[4] = 'NFP⚡';
+
+  // Week of month (1=first week, 2=second, etc.)
+  const weekOfMonth = Math.ceil(d / 7);
+  if(weekOfMonth === 1) { cats[1] = 'ISM Svc'; cats[0] = 'ISM Mfg'; }
+  if(weekOfMonth === 2) { cats[1] = 'JOLTS'; cats[3] = 'Claims'; }
+  if(weekOfMonth === 3) { cats[2] = 'CPI'; cats[3] = 'Claims'; cats[4] = cats[4]||'Retail'; }
+  if(weekOfMonth === 4) { cats[2] = 'PCE'; cats[3] = 'Claims'; cats[0] = 'Durable'; }
+
+  // Always show Claims on Thursday if not set
+  if(!cats[3]) cats[3] = 'Claims';
+
+  return cats;
+}
+
+function initDaySelector(){
+  buildWeekDays();
+}
 function initTickerSelector(){
-  document.getElementById('tickerRow').addEventListener('click',e=>{
+  function handleTickerClick(e){
     const btn=e.target.closest('.ticker-btn');if(!btn)return;
-    document.querySelectorAll('.ticker-btn').forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active'); selectedTicker=btn.dataset.ticker;
+    // Clear active across BOTH rows
+    document.querySelectorAll('#tickerRow .ticker-btn, #tickerRow2 .ticker-btn')
+      .forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedTicker=btn.dataset.ticker;
     document.getElementById('tickerLabel').textContent=selectedTicker;
-    clearHints(); document.getElementById('price').value='';
-  });
+    clearHints();
+    document.getElementById('price').value='';
+    // Clear cached hist data when switching tickers so it reloads for new ticker
+    window._arthaHist=null;
+    const histStatus=document.getElementById('histStatus');
+    if(histStatus){histStatus.textContent='Not loaded';histStatus.style.color='var(--text3)';histStatus.style.background='var(--bg)';}
+    // Update strike hint label
+    onPriceChange();
+    // Auto-load history for new ticker
+    loadHistoricalData(false);
+  }
+  document.getElementById('tickerRow').addEventListener('click',handleTickerClick);
+  document.getElementById('tickerRow2').addEventListener('click',handleTickerClick);
 }
 
 // ============================================================
@@ -912,7 +1027,11 @@ async function runAnalysis(){
   const sa=parseFloat(document.getElementById('shortAsk')?.value)||null;
   const hasLegs=lb&&la&&sb&&sa;
   const netDebit=hasLegs?((la+lb)/2)-((sa+sb)/2):null;
-  const atm=Math.round(price), longStrike=atm, shortStrike=atm+4, spreadWidth=4;
+  const atm=Math.round(price);
+  const stockTickers=['TSLA','MU','META'];
+  const isStock = stockTickers.indexOf(selectedTicker) !== -1;
+  const spreadWidth = isStock ? Math.max(5, Math.round(price * 0.008 / 5) * 5) : 4;
+  const longStrike=atm, shortStrike=atm+spreadWidth;
   const maxProfit=netDebit?Math.round((spreadWidth-netDebit)*100):null;
   const maxLoss=netDebit?Math.round(netDebit*100):null;
   const accountSize=parseFloat(document.getElementById('accountSize').value)||10000;
@@ -1008,6 +1127,150 @@ function updateStatus(msg){
   const el=document.getElementById('loadingLabel');
   if(el) el.textContent=msg;
   console.log('[Artha]',msg);
+}
+
+// ── RENDER 3 SETUPS TAB ──────────────────────────────────────────────────
+function renderSetupsTab(d, inputs) {
+  if(!d.setups || !d.setups.length) {
+    return '<div class="card card-blue"><div class="card-head"><div class="card-title">3 Ranked setups</div></div><div style="color:var(--text3);font-size:12px;padding:10px 0;">No setups returned. Re-run analysis.</div></div>';
+  }
+  var dirColor = function(dir) { return dir==='Bullish'?'green':dir==='Bearish'?'red':'amber'; };
+  var vColor   = function(v)   { return v==='GO'?'green':v==='WAIT'?'amber':'red'; };
+  var confBar  = function(c)   {
+    var col = c>=70?'var(--green-text)':c>=45?'var(--amber-text)':'var(--red-text)';
+    var bg  = c>=70?'var(--green-mid)':c>=45?'var(--amber-mid)':'var(--red-mid)';
+    return '<div style="display:flex;align-items:center;gap:8px;margin:6px 0;">'
+      +'<div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden;">'
+      +'<div style="width:'+c+'%;height:100%;background:'+bg+';border-radius:3px;"></div></div>'
+      +'<span style="font-size:11px;font-weight:600;color:'+col+';">'+c+'%</span></div>';
+  };
+
+  var html = '';
+  d.setups.forEach(function(s, i) {
+    var isTop = i === 0;
+    var borderColor = isTop ? (s.direction==='Bullish'?'var(--green-mid)':s.direction==='Bearish'?'var(--red-mid)':'var(--amber-mid)') : 'var(--border)';
+    var rankColors = ['#1a1a2e','#2d2d2d','#3a3a3a'];
+    html += '<div class="card" style="border:' + (isTop?'2px':'1.5px') + ' solid '+borderColor+';margin-bottom:10px;">';
+
+    // Header row
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">';
+    html += '<div style="width:28px;height:28px;border-radius:50%;background:var(--bg);border:1.5px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--text3);">#'+s.rank+'</div>';
+    html += '<div style="flex:1;">';
+    html += '<div style="font-size:14px;font-weight:600;color:var(--text);">'+s.strategy+'</div>';
+    html += '<div style="font-size:11px;color:var(--text3);">'+s.whyThisRank+'</div>';
+    html += '</div>';
+    html += '<span class="tag '+dirColor(s.direction)+'" style="font-size:10px;">'+s.direction+'</span>';
+    html += '<span class="tag '+vColor(s.verdict)+'" style="font-size:11px;font-weight:700;">'+s.verdict+'</span>';
+    html += '</div>';
+
+    // Confidence bar
+    html += '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;font-weight:500;">Confidence</div>';
+    html += confBar(s.confidence);
+
+    // Trade details grid
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin:10px 0;">';
+    html += '<div class="metric"><div class="m-label">Buy strike</div><div class="m-val blue">$'+s.longStrike+'</div></div>';
+    html += '<div class="metric"><div class="m-label">Sell strike</div><div class="m-val">$'+s.shortStrike+'</div></div>';
+    html += '<div class="metric"><div class="m-label">Net debit</div><div class="m-val red">'+(s.netDebit?'$'+parseFloat(s.netDebit).toFixed(2):'Est')+'</div></div>';
+    html += '<div class="metric"><div class="m-label">R:R</div><div class="m-val green">'+s.rr+'</div></div>';
+    html += '</div>';
+
+    // Rules
+    html += '<div style="font-size:12px;">';
+    html += '<div class="t-row"><span class="t-label">Entry when</span><span class="t-val" style="font-size:11px;text-align:right;max-width:200px;">'+s.entryCondition+'</span></div>';
+    html += '<div class="t-row"><span class="t-label">Take profit</span><span class="t-val green" style="font-size:11px;">'+s.profitTarget+'</span></div>';
+    html += '<div class="t-row"><span class="t-label">Stop rule</span><span class="t-val red" style="font-size:11px;">'+s.stopRule+'</span></div>';
+    html += '<div class="t-row"><span class="t-label">Hard close CT</span><span class="t-val red">'+s.hardClose+'</span></div>';
+    html += '<div class="t-row"><span class="t-label">Max profit</span><span class="t-val green">$'+s.maxProfit+'</span></div>';
+    html += '<div class="t-row"><span class="t-label">Max loss</span><span class="t-val red">$'+s.maxLoss+'</span></div>';
+    html += '</div>';
+
+    html += '</div>';
+  });
+
+  return html;
+}
+
+// ── RENDER OHLC FORECAST TAB ──────────────────────────────────────────────
+function renderOhlcTab(d, inputs) {
+  var o = d.ohlc;
+  if(!o || !o.predHigh) {
+    return '<div class="card card-teal"><div class="card-head"><div class="card-title">OHLC forecast</div></div>'
+      +'<div style="color:var(--text3);font-size:12px;padding:10px 0;">No OHLC prediction returned. Re-run analysis with historical data loaded.</div></div>';
+  }
+  var h = window._arthaHist;
+  var price = inputs.price;
+  var biasColor = o.bias==='Bullish'?'green':o.bias==='Bearish'?'red':'amber';
+
+  // Build visual price bar
+  var lo = Math.min(o.predLowBear||o.predLow, o.predLow) - 0.5;
+  var hi = Math.max(o.predHighBull||o.predHigh, o.predHigh) + 0.5;
+  var range = hi - lo || 1;
+  var pct = function(val) { return Math.round(((val-lo)/range)*100); };
+  var bar = function(label, val, color, bold) {
+    var p = pct(val);
+    return '<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:11px;">'
+      +'<div style="width:60px;text-align:right;color:var(--text3);flex-shrink:0;">'+label+'</div>'
+      +'<div style="flex:1;position:relative;height:20px;background:var(--bg);border-radius:4px;border:0.5px solid var(--border);">'
+      +'<div style="position:absolute;left:'+p+'%;top:50%;transform:translate(-50%,-50%);width:3px;height:14px;border-radius:2px;background:'+color+';"></div>'
+      +'</div>'
+      +'<div style="width:50px;font-weight:'+(bold?'600':'400')+';color:'+color+';">$'+parseFloat(val).toFixed(2)+'</div>'
+      +'</div>';
+  };
+
+  var html = '';
+
+  // Bias banner
+  html += '<div class="card card-'+biasColor+'" style="margin-bottom:10px;">';
+  html += '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">';
+  html += '<div><div style="font-size:11px;color:var(--text3);margin-bottom:2px;">Today OHLC forecast — '+inputs.ticker+' · '+selectedDay+'</div>';
+  html += '<div style="font-size:18px;font-weight:600;color:var(--text);">'+o.bias+' bias · Expected range $'+parseFloat(o.expectedRange).toFixed(2)+'</div>';
+  html += '<div style="font-size:12px;color:var(--text2);margin-top:4px;line-height:1.5;">'+o.ohlcReasoning+'</div></div>';
+  html += '<span class="tag '+biasColor+'" style="margin-left:auto;font-size:13px;font-weight:700;">'+o.bias+'</span>';
+  html += '</div></div>';
+
+  // Predicted OHLC metrics
+  html += '<div class="metrics-4" style="margin-bottom:10px;">';
+  html += '<div class="metric"><div class="m-label">Pred open</div><div class="m-val blue">$'+parseFloat(o.predOpen).toFixed(2)+'</div><div class="m-sub">Current price</div></div>';
+  html += '<div class="metric"><div class="m-label">Pred high (base)</div><div class="m-val green">$'+parseFloat(o.predHigh).toFixed(2)+'</div><div class="m-sub">Bull: $'+parseFloat(o.predHighBull||o.predHigh).toFixed(2)+'</div></div>';
+  html += '<div class="metric"><div class="m-label">Pred low (base)</div><div class="m-val red">$'+parseFloat(o.predLow).toFixed(2)+'</div><div class="m-sub">Bear: $'+parseFloat(o.predLowBear||o.predLow).toFixed(2)+'</div></div>';
+  html += '<div class="metric"><div class="m-label">Pred close</div><div class="m-val '+(parseFloat(o.predClose)>=price?'green':'red')+'">$'+parseFloat(o.predClose).toFixed(2)+'</div><div class="m-sub">Key watch: $'+parseFloat(o.keyLevelToWatch).toFixed(2)+'</div></div>';
+  html += '</div>';
+
+  // Visual range bar
+  html += '<div class="card" style="margin-bottom:10px;">';
+  html += '<div class="card-title" style="margin-bottom:12px;">Price range visualization</div>';
+  if(o.predHighBull) html += bar('Bull High', o.predHighBull, 'var(--green-text)', true);
+  html += bar('Pred High', o.predHigh, 'var(--green-text)', false);
+  html += bar('Pred Close', o.predClose, parseFloat(o.predClose)>=price?'var(--blue-text)':'var(--amber-text)', false);
+  html += bar('Open / Now', price, 'var(--text)', true);
+  html += bar('Pred Low', o.predLow, 'var(--red-text)', false);
+  if(o.predLowBear) html += bar('Bear Low', o.predLowBear, 'var(--red-text)', true);
+
+  // Overlay key levels if hist data available
+  if(h) {
+    html += '<div style="border-top:0.5px solid var(--border);margin-top:8px;padding-top:8px;">';
+    html += bar('Short strike', inputs.shortStrike, 'var(--purple-text)', true);
+    html += bar('R1 pivot', h.r1, 'var(--red-text)', false);
+    html += bar('S1 pivot', h.s1, 'var(--green-text)', false);
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Strike reachability verdict
+  var reachShort = parseFloat(o.predHighBull||o.predHigh) >= inputs.shortStrike;
+  var reachBase  = parseFloat(o.predHigh) >= inputs.shortStrike;
+  html += '<div class="card" style="border:1.5px solid '+(reachBase?'var(--green-mid)':reachShort?'var(--amber-mid)':'var(--red-mid)')+';background:'+(reachBase?'var(--green-light)':reachShort?'var(--amber-light)':'var(--red-light)')+'">';
+  html += '<div class="card-title" style="color:'+(reachBase?'var(--green-text)':reachShort?'var(--amber-text)':'var(--red-text)')+';">Strike reachability</div>';
+  html += '<div style="font-size:13px;font-weight:600;margin-bottom:4px;color:var(--text);">';
+  if(reachBase) html += '✓ Base case pred high $'+parseFloat(o.predHigh).toFixed(2)+' reaches short strike $'+inputs.shortStrike+' — max profit achievable';
+  else if(reachShort) html += '⚡ Only bull case reaches $'+inputs.shortStrike+' — consider narrowing to $'+(inputs.shortStrike-2)+' short strike';
+  else html += '✗ Neither case reaches $'+inputs.shortStrike+' — spread too wide for today OHLC. Consider $'+(Math.round(parseFloat(o.predHigh)-1)+' short strike');
+  html += '</div>';
+  html += '<div style="font-size:11px;color:var(--text2);">Predicted high: $'+parseFloat(o.predHigh).toFixed(2)+' (base) · $'+parseFloat(o.predHighBull||o.predHigh).toFixed(2)+' (bull) · Short strike: $'+inputs.shortStrike+'</div>';
+  html += '</div>';
+
+  return html;
 }
 
 // Main JSON extractor — handles Claude writing text before/after the JSON block
@@ -1137,7 +1400,10 @@ function buildJournalSummary(journal){
 // PROMPT BUILDER
 // ============================================================
 function buildPrompt(d){
-  return`You are an expert options trader analyzing ${d.ticker} for a 0DTE trade on ${d.day}.
+  const isEtf = ['IWM','SPY','QQQ'].indexOf(d.ticker) !== -1;
+  const isStock = !isEtf;
+  return`You are an expert options trader analyzing ${d.ticker} for a 0DTE options trade on ${d.day}.
+${isStock ? 'This is an individual stock — check for earnings dates, analyst ratings, and company-specific news in your web search.' : 'This is an ETF — focus on macro, sector flows, and index-level analysis.'}
 
 LIVE MARKET DATA:
 - ${d.ticker} price: $${d.price}
@@ -1158,32 +1424,113 @@ ${d.journalSummary}
 
 TASK: First use web_search to find current ${d.ticker} news and catalysts for ${d.day}. Then run all 7 frameworks.
 
-CRITICAL: Respond ONLY with a single valid JSON object. Rules:
-- No text before { or after the final }
-- No markdown code fences
-- Use only straight double quotes " never curly quotes
-- Escape apostrophes as \\' in all string values (e.g. "don\\'t" not "don't")
-- No trailing commas after last array/object items
-- Keep all string values on a single line, no line breaks inside strings
+
+CRITICAL: Respond ONLY with a single valid JSON object.
+Rules: No text before { or after }. No markdown. Straight double quotes only.
+Escape apostrophes with backslash. No trailing commas. All strings on one line.
+
+REQUIREMENTS:
+1. Use web_search for current ${d.ticker} news on ${d.day}
+2. Rank 3 strategies by confidence (0-100): Bull Call Spread, Bear Put Spread, Straddle
+3. Predict today OHLC using all indicators provided
+
 {
-  "verdict":"GO"|"WAIT"|"SKIP",
-  "verdictTitle":"short reason",
-  "verdictSub":"one sentence",
-  "trade":{"strategy":"string","longStrike":${d.longStrike},"shortStrike":${d.shortStrike},"netDebit":${d.netDebit?.toFixed(2)||0},"maxProfit":${d.maxProfit||0},"maxLoss":${d.maxLoss||0},"breakeven":0,"rr":"1:X","contracts":${d.maxContracts||1},"totalRisk":0,"entryCondition":"string","stopRule":"string","profitTarget":"string","hardClose":"HH:MM AM/PM CT"},
-  "metrics":{"technicalBias":"Bullish"|"Bearish"|"Neutral","ivEnvironment":"Low"|"Normal"|"High","catalystRisk":"Low"|"Medium"|"High","confidence":"Low"|"Medium"|"High"},
-  "news":[{"headline":"string","impact":"Bullish"|"Bearish"|"Neutral","detail":"string"}],
-  "frameworks":[
-    {"num":"①","name":"Trade idea","signal":"Bullish"|"Bearish"|"Neutral","note":"string"},
-    {"num":"②","name":"Technical","signal":"Bullish"|"Bearish"|"Neutral","note":"string"},
-    {"num":"③","name":"News","signal":"Bullish"|"Bearish"|"Neutral","note":"string"},
-    {"num":"④","name":"Backtest","signal":"Bullish"|"Bearish"|"Neutral","note":"string"},
-    {"num":"⑤","name":"Risk","signal":"Bullish"|"Bearish"|"Neutral","note":"string"},
-    {"num":"⑥","name":"Journal","signal":"Bullish"|"Bearish"|"Neutral","note":"string"},
-    {"num":"⑦","name":"Plan","signal":"Bullish"|"Bearish"|"Neutral","note":"string"}
+  "verdict": "GO or WAIT or SKIP",
+  "verdictTitle": "reason for top setup",
+  "verdictSub": "one sentence",
+
+  "ohlc": {
+    "predOpen": ${d.price},
+    "predHigh": 0.00,
+    "predLow": 0.00,
+    "predClose": 0.00,
+    "predHighBull": 0.00,
+    "predHighBear": 0.00,
+    "predLowBull": 0.00,
+    "predLowBear": 0.00,
+    "bias": "Bullish or Bearish or Neutral",
+    "expectedRange": 0.00,
+    "keyLevelToWatch": 0.00,
+    "ohlcReasoning": "2 sentences on prediction basis"
+  },
+
+  "setups": [
+    {
+      "rank": 1,
+      "confidence": 75,
+      "strategy": "Bull Call Spread",
+      "direction": "Bullish",
+      "verdict": "GO or WAIT or SKIP",
+      "longStrike": ${d.longStrike},
+      "shortStrike": ${d.shortStrike},
+      "netDebit": ${d.netDebit!=null?d.netDebit.toFixed(2):0},
+      "maxProfit": ${d.maxProfit||0},
+      "maxLoss": ${d.maxLoss||0},
+      "breakeven": 0.00,
+      "rr": "1:X",
+      "contracts": ${d.maxContracts||1},
+      "entryCondition": "string",
+      "stopRule": "string",
+      "profitTarget": "string",
+      "hardClose": "HH:MM AM/PM CT",
+      "whyThisRank": "one sentence"
+    },
+    {
+      "rank": 2,
+      "confidence": 45,
+      "strategy": "Bear Put Spread",
+      "direction": "Bearish",
+      "verdict": "WAIT or SKIP",
+      "longStrike": ${d.longStrike},
+      "shortStrike": ${d.longStrike-4},
+      "netDebit": 0,
+      "maxProfit": 0,
+      "maxLoss": 0,
+      "breakeven": 0.00,
+      "rr": "1:X",
+      "contracts": ${d.maxContracts||1},
+      "entryCondition": "string",
+      "stopRule": "string",
+      "profitTarget": "string",
+      "hardClose": "HH:MM AM/PM CT",
+      "whyThisRank": "one sentence"
+    },
+    {
+      "rank": 3,
+      "confidence": 30,
+      "strategy": "Straddle",
+      "direction": "Neutral",
+      "verdict": "SKIP",
+      "longStrike": ${d.longStrike},
+      "shortStrike": ${d.longStrike},
+      "netDebit": 0,
+      "maxProfit": 0,
+      "maxLoss": 0,
+      "breakeven": 0.00,
+      "rr": "1:X",
+      "contracts": 1,
+      "entryCondition": "string",
+      "stopRule": "string",
+      "profitTarget": "string",
+      "hardClose": "HH:MM AM/PM CT",
+      "whyThisRank": "one sentence"
+    }
   ],
-  "journalInsight":"Personal pattern based on history or null",
-  "reasoning":"3-4 sentence explanation",
-  "checklist":[{"time":"HH:MM CT","action":"string"}]
+
+  "metrics": {"technicalBias": "Bullish or Bearish or Neutral", "ivEnvironment": "Low or Normal or High", "catalystRisk": "Low or Medium or High", "confidence": "Low or Medium or High"},
+  "news": [{"headline": "string", "impact": "Bullish or Bearish or Neutral", "detail": "string"}],
+  "frameworks": [
+    {"num": "①", "name": "Trade idea", "signal": "Bullish or Bearish or Neutral", "note": "string"},
+    {"num": "②", "name": "Technical", "signal": "Bullish or Bearish or Neutral", "note": "string"},
+    {"num": "③", "name": "News", "signal": "Bullish or Bearish or Neutral", "note": "string"},
+    {"num": "④", "name": "Backtest", "signal": "Bullish or Bearish or Neutral", "note": "string"},
+    {"num": "⑤", "name": "Risk", "signal": "Bullish or Bearish or Neutral", "note": "string"},
+    {"num": "⑥", "name": "Journal", "signal": "Bullish or Bearish or Neutral", "note": "string"},
+    {"num": "⑦", "name": "Plan", "signal": "Bullish or Bearish or Neutral", "note": "string"}
+  ],
+  "journalInsight": "string or null",
+  "reasoning": "3-4 sentence overall analysis",
+  "checklist": [{"time": "HH:MM CT", "action": "string"}]
 }`;
 }
 
@@ -1198,7 +1545,9 @@ function renderResults(d,inputs){
   // Defensive defaults for all fields
   d.verdictTitle=d.verdictTitle||'Analysis complete';
   d.verdictSub=d.verdictSub||'';
-  d.trade=d.trade||{};
+  d.trade=d.trade||(d.setups&&d.setups[0])||{};
+  d.setups=d.setups||[];
+  d.ohlc=d.ohlc||null;
   d.metrics=d.metrics||{};
   d.news=d.news||[];
   d.frameworks=d.frameworks||[];
@@ -1233,7 +1582,8 @@ function renderResults(d,inputs){
     </div>`:''}
 
     <div class="tabs">
-      <button class="tab active" onclick="switchTab('trade',this)">📊 Trade</button>
+      <button class="tab active" onclick="switchTab('setups',this)">🎯 3 Setups</button>
+      <button class="tab" onclick="switchTab('ohlc',this)">📊 OHLC Forecast</button>
       <button class="tab" onclick="switchTab('news',this)">📰 News</button>
       <button class="tab" onclick="switchTab('frameworks',this)">⑦ Frameworks</button>
       <button class="tab" onclick="switchTab('plan',this)">✅ Day Plan</button>
@@ -1242,8 +1592,8 @@ function renderResults(d,inputs){
       <button class="tab" onclick="switchTab('hist',this)">📈 History</button>
     </div>
 
-    <!-- TRADE TAB -->
-    <div id="tab-trade" class="tab-pane active">
+    <!-- SETUPS TAB -->
+    <div id="tab-setups" class="tab-pane active">
       <div class="metrics-4">
         <div class="metric"><div class="m-label">Price</div><div class="m-val blue">$${inputs.price}</div><div class="m-sub">Live input</div></div>
         <div class="metric"><div class="m-label">Net debit</div><div class="m-val red">${inputs.netDebit?'$'+inputs.netDebit.toFixed(2):'—'}</div><div class="m-sub">Per contract</div></div>
@@ -1310,6 +1660,11 @@ function renderResults(d,inputs){
           <button class="log-btn" id="logBtn" onclick="logTrade('${vc}','${inputs.longStrike}','${inputs.shortStrike}')">Log →</button>
         </div>
       </div>
+    </div>
+
+    <!-- OHLC FORECAST TAB -->
+    <div id="tab-ohlc" class="tab-pane">
+      ${renderOhlcTab(d, inputs)}
     </div>
 
     <!-- NEWS TAB -->
@@ -1601,9 +1956,10 @@ async function loadHistoricalData(forceRefresh=false) {
       }
     }
 
-    // Fetch SPY for relative strength comparison (only when loading IWM)
+    // Fetch SPY for relative strength comparison (only for ETFs, not individual stocks)
     let spyOhlcv = null;
-    if(ticker === 'IWM') {
+    const etfTickers = ['IWM','QQQ'];
+    if(etfTickers.indexOf(ticker) !== -1 && ticker !== 'SPY') {
       try {
         const spyUrl = 'https://api.twelvedata.com/time_series?symbol=SPY&interval=1day&outputsize=30&apikey=' + tdKey;
         const sr = await fetch(spyUrl);
@@ -2386,6 +2742,12 @@ function switchTab(name,el){
     if(!window._arthaHist) loadHistoricalData().then(()=>renderHistTabInto());
     else renderHistTabInto();
   }
+}
+
+// Default first tab to setups after results render
+function activateSetupsTab(){
+  const t=document.querySelector('.tab');
+  if(t) switchTab('setups',t);
 }
 
 // ============================================================
