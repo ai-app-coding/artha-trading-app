@@ -1194,9 +1194,39 @@ function renderSetupsTab(d, inputs) {
 // ── RENDER OHLC FORECAST TAB ──────────────────────────────────────────────
 function renderOhlcTab(d, inputs) {
   var o = d.ohlc;
-  if(!o || !o.predHigh) {
-    return '<div class="card card-teal"><div class="card-head"><div class="card-title">OHLC forecast</div></div>'
-      +'<div style="color:var(--text3);font-size:12px;padding:10px 0;">No OHLC prediction returned. Re-run analysis with historical data loaded.</div></div>';
+  // Accept ohlc if any real non-zero value exists
+  var hasData = o && (parseFloat(o.predHigh) > 0 || parseFloat(o.predLow) > 0);
+  if(!hasData) {
+    // Try to compute from available data as fallback
+    var h = window._arthaHist;
+    var pr = inputs.price;
+    if(h && pr) {
+      var adr = h.adr20 || 3;
+      var bullish = h.trend === 'Bullish';
+      var bearish = h.trend === 'Bearish';
+      o = {
+        predOpen:  pr,
+        predHigh:  Math.round((pr + adr * (bullish ? 0.65 : 0.45)) * 100) / 100,
+        predLow:   Math.round((pr - adr * (bearish ? 0.65 : 0.45)) * 100) / 100,
+        predClose: Math.round((pr + adr * (bullish ? 0.15 : bearish ? -0.15 : 0)) * 100) / 100,
+        predHighBull: Math.round((pr + adr * 0.85) * 100) / 100,
+        predHighBear: Math.round((pr + adr * 0.25) * 100) / 100,
+        predLowBull:  Math.round((pr - adr * 0.25) * 100) / 100,
+        predLowBear:  Math.round((pr - adr * 0.85) * 100) / 100,
+        bias: bullish ? 'Bullish' : bearish ? 'Bearish' : 'Neutral',
+        expectedRange: Math.round(adr * 100) / 100,
+        keyLevelToWatch: h.r1 || Math.round((pr + adr * 0.5) * 100) / 100,
+        ohlcReasoning: 'Estimated from 20-day ADR of $' + adr + ' and ' + h.trend + ' trend bias. Load historical data for precision.',
+        isFallback: true
+      };
+    } else {
+      return '<div class="card card-teal"><div class="card-head"><div class="card-title">OHLC forecast</div></div>'
+        +'<div style="padding:16px;text-align:center;">'
+        +'<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:8px;">OHLC prediction not available</div>'
+        +'<div style="font-size:12px;color:var(--text3);margin-bottom:12px;">Load historical data first (sidebar → Load IWM History), then re-run analysis.</div>'
+        +'<button class="btn btn-blue btn-sm" onclick="loadHistoricalData(true)">Load historical data</button>'
+        +'</div></div>';
+    }
   }
   var h = window._arthaHist;
   var price = inputs.price;
@@ -1220,6 +1250,12 @@ function renderOhlcTab(d, inputs) {
 
   var html = '';
 
+  // Fallback notice if Claude returned zeros
+  if(o.isFallback) {
+    html += '<div style="background:var(--amber-light);border:1px solid var(--amber-mid);border-radius:var(--radius);padding:8px 12px;font-size:11px;color:var(--amber-text);margin-bottom:8px;">'
+      +'⚡ OHLC estimated from ADR + trend data. Claude did not return prediction values — re-run analysis for AI-generated forecast.'
+      +'</div>';
+  }
   // Bias banner
   html += '<div class="card card-'+biasColor+'" style="margin-bottom:10px;">';
   html += '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">';
@@ -1432,7 +1468,16 @@ Escape apostrophes with backslash. No trailing commas. All strings on one line.
 REQUIREMENTS:
 1. Use web_search for current ${d.ticker} news on ${d.day}
 2. Rank 3 strategies by confidence (0-100): Bull Call Spread, Bear Put Spread, Straddle
-3. Predict today OHLC using all indicators provided
+3. MANDATORY: Predict today OHLC using ALL indicator data provided above. You MUST calculate real numbers for predHigh, predLow, predClose based on:
+   - Current price: $${d.price}
+   - ADR (average daily range) from historical data above
+   - Trend bias (bullish/bearish/neutral) from MA and MACD signals
+   - Bollinger Band position and squeeze status
+   - RSI overbought/oversold
+   - Pivot points R1/S1 as natural targets
+   - Today catalyst risk (FOMC/NFP = wider range, normal day = tighter)
+   Example: if price=$278, ADR=$3.50, bullish trend → predHigh≈$280.50, predLow≈$275.80, predClose≈$279.20
+   DO NOT return 0 or null for any ohlc field. Always return real estimated numbers.
 
 {
   "verdict": "GO or WAIT or SKIP",
@@ -1441,17 +1486,17 @@ REQUIREMENTS:
 
   "ohlc": {
     "predOpen": ${d.price},
-    "predHigh": 0.00,
-    "predLow": 0.00,
-    "predClose": 0.00,
-    "predHighBull": 0.00,
-    "predHighBear": 0.00,
-    "predLowBull": 0.00,
-    "predLowBear": 0.00,
+    "predHigh": REPLACE_WITH_ACTUAL_NUMBER,
+    "predLow": REPLACE_WITH_ACTUAL_NUMBER,
+    "predClose": REPLACE_WITH_ACTUAL_NUMBER,
+    "predHighBull": REPLACE_WITH_ACTUAL_NUMBER,
+    "predHighBear": REPLACE_WITH_ACTUAL_NUMBER,
+    "predLowBull": REPLACE_WITH_ACTUAL_NUMBER,
+    "predLowBear": REPLACE_WITH_ACTUAL_NUMBER,
     "bias": "Bullish or Bearish or Neutral",
-    "expectedRange": 0.00,
-    "keyLevelToWatch": 0.00,
-    "ohlcReasoning": "2 sentences on prediction basis"
+    "expectedRange": REPLACE_WITH_ACTUAL_NUMBER,
+    "keyLevelToWatch": REPLACE_WITH_ACTUAL_NUMBER,
+    "ohlcReasoning": "REPLACE WITH 2 sentence explanation using the indicator data provided"
   },
 
   "setups": [
