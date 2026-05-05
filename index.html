@@ -1191,119 +1191,132 @@ function renderSetupsTab(d, inputs) {
   return html;
 }
 
-// ── RENDER OHLC FORECAST TAB ──────────────────────────────────────────────
+// ── RENDER OHLC FORECAST TAB — client computed ───────────────────────────
 function renderOhlcTab(d, inputs) {
-  var o = d.ohlc;
-  // Accept ohlc if any real non-zero value exists
-  var hasData = o && (parseFloat(o.predHigh) > 0 || parseFloat(o.predLow) > 0);
-  if(!hasData) {
-    // Try to compute from available data as fallback
-    var h = window._arthaHist;
-    var pr = inputs.price;
-    if(h && pr) {
-      var adr = h.adr20 || 3;
-      var bullish = h.trend === 'Bullish';
-      var bearish = h.trend === 'Bearish';
-      o = {
-        predOpen:  pr,
-        predHigh:  Math.round((pr + adr * (bullish ? 0.65 : 0.45)) * 100) / 100,
-        predLow:   Math.round((pr - adr * (bearish ? 0.65 : 0.45)) * 100) / 100,
-        predClose: Math.round((pr + adr * (bullish ? 0.15 : bearish ? -0.15 : 0)) * 100) / 100,
-        predHighBull: Math.round((pr + adr * 0.85) * 100) / 100,
-        predHighBear: Math.round((pr + adr * 0.25) * 100) / 100,
-        predLowBull:  Math.round((pr - adr * 0.25) * 100) / 100,
-        predLowBear:  Math.round((pr - adr * 0.85) * 100) / 100,
-        bias: bullish ? 'Bullish' : bearish ? 'Bearish' : 'Neutral',
-        expectedRange: Math.round(adr * 100) / 100,
-        keyLevelToWatch: h.r1 || Math.round((pr + adr * 0.5) * 100) / 100,
-        ohlcReasoning: 'Estimated from 20-day ADR of $' + adr + ' and ' + h.trend + ' trend bias. Load historical data for precision.',
-        isFallback: true
-      };
-    } else {
-      return '<div class="card card-teal"><div class="card-head"><div class="card-title">OHLC forecast</div></div>'
-        +'<div style="padding:16px;text-align:center;">'
-        +'<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:8px;">OHLC prediction not available</div>'
-        +'<div style="font-size:12px;color:var(--text3);margin-bottom:12px;">Load historical data first (sidebar → Load IWM History), then re-run analysis.</div>'
-        +'<button class="btn btn-blue btn-sm" onclick="loadHistoricalData(true)">Load historical data</button>'
-        +'</div></div>';
-    }
-  }
-  var h = window._arthaHist;
-  var price = inputs.price;
-  var biasColor = o.bias==='Bullish'?'green':o.bias==='Bearish'?'red':'amber';
+  var h    = window._arthaHist;
+  var pr   = inputs.price || 0;
 
-  // Build visual price bar
-  var lo = Math.min(o.predLowBear||o.predLow, o.predLow) - 0.5;
-  var hi = Math.max(o.predHighBull||o.predHigh, o.predHigh) + 0.5;
-  var range = hi - lo || 1;
-  var pct = function(val) { return Math.round(((val-lo)/range)*100); };
-  var bar = function(label, val, color, bold) {
-    var p = pct(val);
-    return '<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:11px;">'
-      +'<div style="width:60px;text-align:right;color:var(--text3);flex-shrink:0;">'+label+'</div>'
-      +'<div style="flex:1;position:relative;height:20px;background:var(--bg);border-radius:4px;border:0.5px solid var(--border);">'
-      +'<div style="position:absolute;left:'+p+'%;top:50%;transform:translate(-50%,-50%);width:3px;height:14px;border-radius:2px;background:'+color+';"></div>'
-      +'</div>'
-      +'<div style="width:50px;font-weight:'+(bold?'600':'400')+';color:'+color+';">$'+parseFloat(val).toFixed(2)+'</div>'
-      +'</div>';
-  };
+  // Get Claude bias if available, else derive from historical data
+  var bias = d.ohlcBias || (h ? h.trend : 'Neutral');
+  var reasoning = d.ohlcReasoning || (h ? 
+    'Bias derived from ' + h.trend + ' trend (' + (h.aboveMa20?'above':'below') + ' MA20). ADR of $' + h.adr20 + ' used for range.' :
+    'Enter live price and load historical data for forecast.');
+  var keyLevel = d.ohlcKeyLevel || (h ? '$' + (bias==='Bullish' ? h.r1 : h.s1) : '—');
+
+  // If no price entered yet
+  if(!pr) {
+    return '<div class="card card-teal"><div class="card-head"><div class="card-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div><div class="card-title">OHLC Forecast</div></div>'
+      + '<div style="padding:16px;color:var(--text3);font-size:12px;">Enter the live price in the sidebar to generate OHLC forecast.</div></div>';
+  }
+
+  // Compute OHLC from historical ADR + bias + indicators
+  var adr      = h ? h.adr20 : pr * 0.012;
+  var isBull   = bias === 'Bullish';
+  var isBear   = bias === 'Bearish';
+
+  // Adjust range based on catalyst risk from metrics
+  var catRisk  = d.metrics && d.metrics.catalystRisk;
+  var catMult  = catRisk === 'High' ? 1.35 : catRisk === 'Low' ? 0.75 : 1.0;
+  var adjAdr   = adr * catMult;
+
+  // Base case predictions
+  var predOpen  = pr;
+  var predHigh  = Math.round((pr + adjAdr * (isBull ? 0.68 : isBear ? 0.42 : 0.55)) * 100) / 100;
+  var predLow   = Math.round((pr - adjAdr * (isBear ? 0.68 : isBull ? 0.42 : 0.55)) * 100) / 100;
+  var predClose = Math.round((pr + adjAdr * (isBull ? 0.18 : isBear ? -0.18 : 0)) * 100) / 100;
+
+  // Bull / Bear scenario predictions
+  var predHighBull = Math.round((pr + adjAdr * 0.90) * 100) / 100;
+  var predHighBear = Math.round((pr + adjAdr * 0.25) * 100) / 100;
+  var predLowBull  = Math.round((pr - adjAdr * 0.25) * 100) / 100;
+  var predLowBear  = Math.round((pr - adjAdr * 0.90) * 100) / 100;
+  var expectedRange = Math.round(adjAdr * catMult * 100) / 100;
+
+  // Clamp to pivot levels if available (price rarely exceeds R2/S2 intraday)
+  if(h) {
+    predHigh     = Math.min(predHigh,     h.r2 + 0.5);
+    predHighBull = Math.min(predHighBull, h.r3 + 0.5);
+    predLow      = Math.max(predLow,      h.s2 - 0.5);
+    predLowBear  = Math.max(predLowBear,  h.s3 - 0.5);
+  }
+
+  var biasColor  = isBull ? 'green' : isBear ? 'red' : 'amber';
+  var shortStrike = inputs.shortStrike || Math.round(pr) + 4;
+
+  // Visual bar helper
+  var lo = predLowBear - 0.3, hi = predHighBull + 0.3, range = hi - lo || 1;
+  function pct(v) { return Math.max(2, Math.min(98, Math.round(((v-lo)/range)*100))); }
+  function barRow(label, val, color, bold) {
+    return '<div style="display:flex;align-items:center;gap:8px;margin:5px 0;font-size:11px;">'
+      + '<div style="width:70px;text-align:right;color:var(--text3);flex-shrink:0;">' + label + '</div>'
+      + '<div style="flex:1;position:relative;height:22px;background:var(--bg);border-radius:4px;border:0.5px solid var(--border);">'
+      + '<div style="position:absolute;left:' + pct(val) + '%;top:50%;transform:translate(-50%,-50%);width:3px;height:14px;border-radius:2px;background:' + color + ';"></div>'
+      + '</div>'
+      + '<div style="width:56px;font-weight:' + (bold?'600':'400') + ';color:' + color + ';">$' + val.toFixed(2) + '</div>'
+      + '</div>';
+  }
+
+  var reachBase  = predHigh  >= shortStrike;
+  var reachBull  = predHighBull >= shortStrike;
+  var reachColor = reachBase ? 'green' : reachBull ? 'amber' : 'red';
+  var reachText  = reachBase
+    ? '✓ Base case high $' + predHigh.toFixed(2) + ' reaches $' + shortStrike + ' — max profit achievable'
+    : reachBull
+    ? '⚡ Only bull case reaches $' + shortStrike + ' — consider $' + (shortStrike-1) + ' short strike'
+    : '✗ Neither case reaches $' + shortStrike + ' — spread too wide. Try $' + Math.ceil(predHigh-0.5) + ' short strike';
 
   var html = '';
 
-  // Fallback notice if Claude returned zeros
-  if(o.isFallback) {
-    html += '<div style="background:var(--amber-light);border:1px solid var(--amber-mid);border-radius:var(--radius);padding:8px 12px;font-size:11px;color:var(--amber-text);margin-bottom:8px;">'
-      +'⚡ OHLC estimated from ADR + trend data. Claude did not return prediction values — re-run analysis for AI-generated forecast.'
-      +'</div>';
-  }
-  // Bias banner
-  html += '<div class="card card-'+biasColor+'" style="margin-bottom:10px;">';
+  // Header bias card
+  html += '<div class="card card-' + biasColor + '" style="margin-bottom:10px;">';
   html += '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">';
-  html += '<div><div style="font-size:11px;color:var(--text3);margin-bottom:2px;">Today OHLC forecast — '+inputs.ticker+' · '+selectedDay+'</div>';
-  html += '<div style="font-size:18px;font-weight:600;color:var(--text);">'+o.bias+' bias · Expected range $'+parseFloat(o.expectedRange).toFixed(2)+'</div>';
-  html += '<div style="font-size:12px;color:var(--text2);margin-top:4px;line-height:1.5;">'+o.ohlcReasoning+'</div></div>';
-  html += '<span class="tag '+biasColor+'" style="margin-left:auto;font-size:13px;font-weight:700;">'+o.bias+'</span>';
+  html += '<div style="flex:1;">';
+  html += '<div style="font-size:11px;color:var(--text3);margin-bottom:2px;">Today OHLC forecast · ' + (inputs.ticker||selectedTicker) + ' · ' + selectedDay + (catRisk==='High'?' · ⚡ High catalyst day':'') + '</div>';
+  html += '<div style="font-size:17px;font-weight:600;color:var(--text);">' + bias + ' bias · Expected range $' + expectedRange.toFixed(2) + '</div>';
+  html += '<div style="font-size:12px;color:var(--text2);margin-top:5px;line-height:1.5;">' + reasoning + '</div>';
+  if(h && catRisk==='High') html += '<div style="font-size:11px;color:var(--amber-text);margin-top:4px;">⚡ Catalyst day — range expanded ' + Math.round((catMult-1)*100) + '% from base ADR</div>';
+  html += '</div>';
+  html += '<span class="tag ' + biasColor + '" style="font-size:14px;font-weight:700;">' + bias + '</span>';
   html += '</div></div>';
 
-  // Predicted OHLC metrics
+  // OHLC metrics
   html += '<div class="metrics-4" style="margin-bottom:10px;">';
-  html += '<div class="metric"><div class="m-label">Pred open</div><div class="m-val blue">$'+parseFloat(o.predOpen).toFixed(2)+'</div><div class="m-sub">Current price</div></div>';
-  html += '<div class="metric"><div class="m-label">Pred high (base)</div><div class="m-val green">$'+parseFloat(o.predHigh).toFixed(2)+'</div><div class="m-sub">Bull: $'+parseFloat(o.predHighBull||o.predHigh).toFixed(2)+'</div></div>';
-  html += '<div class="metric"><div class="m-label">Pred low (base)</div><div class="m-val red">$'+parseFloat(o.predLow).toFixed(2)+'</div><div class="m-sub">Bear: $'+parseFloat(o.predLowBear||o.predLow).toFixed(2)+'</div></div>';
-  html += '<div class="metric"><div class="m-label">Pred close</div><div class="m-val '+(parseFloat(o.predClose)>=price?'green':'red')+'">$'+parseFloat(o.predClose).toFixed(2)+'</div><div class="m-sub">Key watch: $'+parseFloat(o.keyLevelToWatch).toFixed(2)+'</div></div>';
+  html += '<div class="metric"><div class="m-label">Open / now</div><div class="m-val blue">$' + predOpen.toFixed(2) + '</div><div class="m-sub">Live price</div></div>';
+  html += '<div class="metric"><div class="m-label">Pred high</div><div class="m-val green">$' + predHigh.toFixed(2) + '</div><div class="m-sub">Bull: $' + predHighBull.toFixed(2) + '</div></div>';
+  html += '<div class="metric"><div class="m-label">Pred low</div><div class="m-val red">$' + predLow.toFixed(2) + '</div><div class="m-sub">Bear: $' + predLowBear.toFixed(2) + '</div></div>';
+  html += '<div class="metric"><div class="m-label">Pred close</div><div class="m-val ' + (predClose>=pr?'green':'red') + '">$' + predClose.toFixed(2) + '</div><div class="m-sub">Key: ' + keyLevel + '</div></div>';
   html += '</div>';
 
   // Visual range bar
   html += '<div class="card" style="margin-bottom:10px;">';
-  html += '<div class="card-title" style="margin-bottom:12px;">Price range visualization</div>';
-  if(o.predHighBull) html += bar('Bull High', o.predHighBull, 'var(--green-text)', true);
-  html += bar('Pred High', o.predHigh, 'var(--green-text)', false);
-  html += bar('Pred Close', o.predClose, parseFloat(o.predClose)>=price?'var(--blue-text)':'var(--amber-text)', false);
-  html += bar('Open / Now', price, 'var(--text)', true);
-  html += bar('Pred Low', o.predLow, 'var(--red-text)', false);
-  if(o.predLowBear) html += bar('Bear Low', o.predLowBear, 'var(--red-text)', true);
-
-  // Overlay key levels if hist data available
+  html += '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;">Price range visualization</div>';
+  html += barRow('Bull High',  predHighBull, 'var(--green-text)', true);
+  html += barRow('Pred High',  predHigh,     'var(--green-text)', false);
+  html += barRow('Pred Close', predClose,    predClose>=pr?'var(--blue-text)':'var(--amber-text)', false);
+  html += barRow('Open / Now', pr,           'var(--text)',        true);
+  html += barRow('Pred Low',   predLow,      'var(--red-text)',    false);
+  html += barRow('Bear Low',   predLowBear,  'var(--red-text)',    true);
   if(h) {
-    html += '<div style="border-top:0.5px solid var(--border);margin-top:8px;padding-top:8px;">';
-    html += bar('Short strike', inputs.shortStrike, 'var(--purple-text)', true);
-    html += bar('R1 pivot', h.r1, 'var(--red-text)', false);
-    html += bar('S1 pivot', h.s1, 'var(--green-text)', false);
+    html += '<div style="border-top:0.5px solid var(--border);margin:8px 0 0;padding-top:8px;">';
+    html += barRow('Short $' + shortStrike, shortStrike, 'var(--purple-text)', true);
+    html += barRow('R1 ' + h.r1, h.r1, 'var(--red-text)', false);
+    html += barRow('PP ' + h.pivot, h.pivot, 'var(--blue-text)', false);
+    html += barRow('S1 ' + h.s1, h.s1, 'var(--green-text)', false);
     html += '</div>';
   }
   html += '</div>';
 
-  // Strike reachability verdict
-  var reachShort = parseFloat(o.predHighBull||o.predHigh) >= inputs.shortStrike;
-  var reachBase  = parseFloat(o.predHigh) >= inputs.shortStrike;
-  html += '<div class="card" style="border:1.5px solid '+(reachBase?'var(--green-mid)':reachShort?'var(--amber-mid)':'var(--red-mid)')+';background:'+(reachBase?'var(--green-light)':reachShort?'var(--amber-light)':'var(--red-light)')+'">';
-  html += '<div class="card-title" style="color:'+(reachBase?'var(--green-text)':reachShort?'var(--amber-text)':'var(--red-text)')+';">Strike reachability</div>';
-  html += '<div style="font-size:13px;font-weight:600;margin-bottom:4px;color:var(--text);">';
-  if(reachBase) html += '✓ Base case pred high $'+parseFloat(o.predHigh).toFixed(2)+' reaches short strike $'+inputs.shortStrike+' — max profit achievable';
-  else if(reachShort) html += '⚡ Only bull case reaches $'+inputs.shortStrike+' — consider narrowing to $'+(inputs.shortStrike-2)+' short strike';
-  else html += '✗ Neither case reaches $'+inputs.shortStrike+' — spread too wide for today OHLC. Consider $'+(Math.round(parseFloat(o.predHigh)-1)+' short strike');
+  // Strike reachability card
+  html += '<div class="card" style="border:1.5px solid var(--' + reachColor + '-mid);background:var(--' + reachColor + '-light);">';
+  html += '<div style="font-size:11px;font-weight:600;color:var(--' + reachColor + '-text);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">Strike reachability</div>';
+  html += '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px;">' + reachText + '</div>';
+  html += '<div style="font-size:11px;color:var(--text2);">Base high: $' + predHigh.toFixed(2) + ' · Bull high: $' + predHighBull.toFixed(2) + ' · Short strike: $' + shortStrike + ' · ADR: $' + adr.toFixed(2) + '</div>';
   html += '</div>';
-  html += '<div style="font-size:11px;color:var(--text2);">Predicted high: $'+parseFloat(o.predHigh).toFixed(2)+' (base) · $'+parseFloat(o.predHighBull||o.predHigh).toFixed(2)+' (bull) · Short strike: $'+inputs.shortStrike+'</div>';
+
+  // Data source note
+  html += '<div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.5;">';
+  html += 'Computed from ' + (h ? h.totalDays + 'd OHLC · 20-day ADR $' + h.adr20 : 'estimated ADR') + ' · Bias: Claude AI · ';
+  html += 'Catalyst multiplier: ' + catMult.toFixed(2) + 'x';
   html += '</div>';
 
   return html;
@@ -1468,36 +1481,16 @@ Escape apostrophes with backslash. No trailing commas. All strings on one line.
 REQUIREMENTS:
 1. Use web_search for current ${d.ticker} news on ${d.day}
 2. Rank 3 strategies by confidence (0-100): Bull Call Spread, Bear Put Spread, Straddle
-3. MANDATORY: Predict today OHLC using ALL indicator data provided above. You MUST calculate real numbers for predHigh, predLow, predClose based on:
-   - Current price: $${d.price}
-   - ADR (average daily range) from historical data above
-   - Trend bias (bullish/bearish/neutral) from MA and MACD signals
-   - Bollinger Band position and squeeze status
-   - RSI overbought/oversold
-   - Pivot points R1/S1 as natural targets
-   - Today catalyst risk (FOMC/NFP = wider range, normal day = tighter)
-   Example: if price=$278, ADR=$3.50, bullish trend → predHigh≈$280.50, predLow≈$275.80, predClose≈$279.20
-   DO NOT return 0 or null for any ohlc field. Always return real estimated numbers.
+3. Provide ohlcBias (Bullish/Bearish/Neutral), ohlcReasoning (2 sentences on today direction), and ohlcKeyLevel (most important price level to watch).
 
 {
   "verdict": "GO or WAIT or SKIP",
   "verdictTitle": "reason for top setup",
   "verdictSub": "one sentence",
 
-  "ohlc": {
-    "predOpen": ${d.price},
-    "predHigh": REPLACE_WITH_ACTUAL_NUMBER,
-    "predLow": REPLACE_WITH_ACTUAL_NUMBER,
-    "predClose": REPLACE_WITH_ACTUAL_NUMBER,
-    "predHighBull": REPLACE_WITH_ACTUAL_NUMBER,
-    "predHighBear": REPLACE_WITH_ACTUAL_NUMBER,
-    "predLowBull": REPLACE_WITH_ACTUAL_NUMBER,
-    "predLowBear": REPLACE_WITH_ACTUAL_NUMBER,
-    "bias": "Bullish or Bearish or Neutral",
-    "expectedRange": REPLACE_WITH_ACTUAL_NUMBER,
-    "keyLevelToWatch": REPLACE_WITH_ACTUAL_NUMBER,
-    "ohlcReasoning": "REPLACE WITH 2 sentence explanation using the indicator data provided"
-  },
+  "ohlcBias": "Bullish or Bearish or Neutral",
+  "ohlcReasoning": "2 sentences explaining predicted price direction for today based on all indicators",
+  "ohlcKeyLevel": "the single most important price level to watch today e.g. $279.50",
 
   "setups": [
     {
@@ -1592,7 +1585,10 @@ function renderResults(d,inputs){
   d.verdictSub=d.verdictSub||'';
   d.trade=d.trade||(d.setups&&d.setups[0])||{};
   d.setups=d.setups||[];
-  d.ohlc=d.ohlc||null;
+  d.ohlc=null; // always computed client-side now
+  d.ohlcBias=d.ohlcBias||null;
+  d.ohlcReasoning=d.ohlcReasoning||null;
+  d.ohlcKeyLevel=d.ohlcKeyLevel||null;
   d.metrics=d.metrics||{};
   d.news=d.news||[];
   d.frameworks=d.frameworks||[];
