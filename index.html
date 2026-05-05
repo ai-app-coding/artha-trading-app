@@ -931,7 +931,29 @@ async function runAnalysis(){
 
   const estimatedMove = parseFloat(document.getElementById('estimatedMove')?.value)||null;
   const esOvernight   = parseFloat(document.getElementById('esOvernight')?.value)||null;
-  const prompt=buildPrompt({ticker:selectedTicker,day:selectedDay,price,vix,ivRank,longStrike,shortStrike,netDebit,maxProfit,maxLoss,maxContracts,accountSize,riskPct,maxRiskDollars,isPreMarket,hasLegs,journalSummary,estimatedMove,esOvernight});
+
+  // Build scenario grid verdict to feed into Claude
+  let scenarioVerdict = null;
+  if(window._arthaHist) {
+    const h = window._arthaHist;
+    const em = estimatedMove || h.adr20;
+    const bullOpen  = price + em;
+    const baseOpen  = price;
+    const bearOpen  = price - em;
+    const estHigh   = baseOpen + h.adr20 * 0.6;
+    const bullHigh  = bullOpen + h.adr20 * 0.6;
+    const bullReachesShort = bullHigh >= shortStrike;
+    const baseReachesShort = estHigh  >= shortStrike;
+    if(bullReachesShort && baseReachesShort) {
+      scenarioVerdict = 'FAVORABLE — both base and bull scenarios reach short strike $'+shortStrike+'. Max profit achievable in 2 of 3 scenarios.';
+    } else if(bullReachesShort && !baseReachesShort) {
+      scenarioVerdict = 'MARGINAL — only bull case reaches short strike $'+shortStrike+'. Base case falls short at est high $'+estHigh.toFixed(2)+'. Consider narrowing spread or waiting for confirmation.';
+    } else {
+      scenarioVerdict = 'UNFAVORABLE — neither base nor bull case reaches short strike $'+shortStrike+'. Estimated high $'+estHigh.toFixed(2)+' vs strike $'+shortStrike+'. Spread width may be too wide for current ADR of $'+h.adr20+'.';
+    }
+  }
+
+  const prompt=buildPrompt({ticker:selectedTicker,day:selectedDay,price,vix,ivRank,longStrike,shortStrike,netDebit,maxProfit,maxLoss,maxContracts,accountSize,riskPct,maxRiskDollars,isPreMarket,hasLegs,journalSummary,estimatedMove,esOvernight,scenarioVerdict});
 
   try {
     updateStatus('Calling Claude API...');
@@ -1124,8 +1146,9 @@ LIVE MARKET DATA:
 - Suggested strikes: $${d.longStrike}/$${d.shortStrike} bull call spread
 ${d.hasLegs?`- Net debit: $${d.netDebit?.toFixed(2)}/contract\n- Max profit: $${d.maxProfit} | Max loss: $${d.maxLoss}`:'- Option legs not provided (pre-market/prep mode)'}
 - Account: $${d.accountSize} | Risk: ${d.riskPct}% = $${d.maxRiskDollars} max${d.maxContracts?`\n- Max safe contracts: ${d.maxContracts}`:''}
-${d.estimatedMove ? `- Estimated Move (EM): $${d.estimatedMove} — upside target $${(d.price+d.estimatedMove).toFixed(2)}, downside $${(d.price-d.estimatedMove).toFixed(2)}` : '- Estimated Move: not provided'}
-${d.esOvernight !== null ? `- ES futures overnight: ${d.esOvernight>0?'+':''}${d.esOvernight}% (${d.esOvernight>0.2?'bullish gap signal':d.esOvernight<-0.2?'bearish gap signal':'neutral, no directional bias from ES'})` : '- ES futures overnight: not provided'}
+${d.estimatedMove ? '- Estimated Move (EM): $'+d.estimatedMove+' — bull target $'+(d.price+d.estimatedMove).toFixed(2)+' / bear target $'+(d.price-d.estimatedMove).toFixed(2) : '- Estimated Move: not provided'}
+${d.esOvernight !== null ? '- ES futures overnight: '+(d.esOvernight>0?'+':'')+d.esOvernight+'% ('+(d.esOvernight>0.2?'BULLISH pre-market signal':d.esOvernight<-0.2?'BEARISH pre-market signal':'neutral')+')' : '- ES futures overnight: not provided'}
+${d.scenarioVerdict ? '- SCENARIO GRID RESULT: '+d.scenarioVerdict : ''}
 
 REAL HISTORICAL OHLC ANALYSIS (computed from actual price data):
 ${buildHistSummary()}
@@ -1578,8 +1601,36 @@ async function loadHistoricalData(forceRefresh=false) {
       }
     }
 
+    // Fetch SPY for relative strength comparison (only when loading IWM)
+    let spyOhlcv = null;
+    if(ticker === 'IWM') {
+      try {
+        const spyUrl = 'https://api.twelvedata.com/time_series?symbol=SPY&interval=1day&outputsize=30&apikey=' + tdKey;
+        const sr = await fetch(spyUrl);
+        const sd = await sr.json();
+        if(sd.values && sd.values.length > 5) {
+          spyOhlcv = sd.values.slice().reverse().map(function(v) {
+            var o=parseFloat(v.open), c=parseFloat(v.close);
+            return { date:v.datetime, close:c, changePct:((c-o)/o)*100 };
+          });
+        }
+      } catch(e) { console.warn('[Artha] SPY fetch failed:', e.message); }
+    }
+
     // Compute analytics
     const analytics = computeAnalytics(ohlcv, ticker);
+
+    // Add relative strength vs SPY
+    if(spyOhlcv && spyOhlcv.length >= 5) {
+      const iwmRet1  = ohlcv[ohlcv.length-1].changePct;
+      const spyRet1  = spyOhlcv[spyOhlcv.length-1].changePct;
+      const iwmRet5  = ((ohlcv[ohlcv.length-1].close - ohlcv[ohlcv.length-6].close) / ohlcv[ohlcv.length-6].close)*100;
+      const spyRet5  = ((spyOhlcv[spyOhlcv.length-1].close - spyOhlcv[spyOhlcv.length-6].close) / spyOhlcv[spyOhlcv.length-6].close)*100;
+      analytics.rsVsSpy1d  = Math.round((iwmRet1 - spyRet1)*100)/100;
+      analytics.rsVsSpy5d  = Math.round((iwmRet5 - spyRet5)*100)/100;
+      analytics.smallCapLeading = analytics.rsVsSpy1d > 0.2;
+      analytics.smallCapLagging = analytics.rsVsSpy1d < -0.2;
+    }
     
     // Cache it
     localStorage.setItem(HIST_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: analytics }));
@@ -1631,6 +1682,89 @@ function computeAnalytics(ohlcv, ticker) {
     return Math.round(100 - (100/(1+rs)));
   }
   const rsi14 = computeRSI(closes);
+
+  // ── MACD (12, 26, 9) ─────────────────────────────────────
+  function ema(arr, period) {
+    const k = 2/(period+1);
+    let e = arr.slice(0,period).reduce((a,b)=>a+b,0)/period;
+    for(let i=period; i<arr.length; i++) e = arr[i]*k + e*(1-k);
+    return e;
+  }
+  function emaArr(arr, period) {
+    const k = 2/(period+1), out = [];
+    let e = arr.slice(0,period).reduce((a,b)=>a+b,0)/period;
+    for(let i=period; i<arr.length; i++) { e = arr[i]*k + e*(1-k); out.push(e); }
+    return out;
+  }
+  const ema12arr = emaArr(closes, 12);
+  const ema26arr = emaArr(closes, 26);
+  const macdLine = ema12arr.slice(ema12arr.length - ema26arr.length).map((v,i)=>v-ema26arr[i]);
+  const signalLine = emaArr(macdLine, 9);
+  const macdVal  = Math.round(macdLine[macdLine.length-1]*100)/100;
+  const signalVal= Math.round(signalLine[signalLine.length-1]*100)/100;
+  const macdHist = Math.round((macdVal-signalVal)*100)/100;
+  const macdBullish = macdVal > signalVal;
+  const macdCrossUp   = macdLine[macdLine.length-1] > signalLine[signalLine.length-1] &&
+                        macdLine[macdLine.length-2] <= signalLine[signalLine.length-2];
+  const macdCrossDown = macdLine[macdLine.length-1] < signalLine[signalLine.length-1] &&
+                        macdLine[macdLine.length-2] >= signalLine[signalLine.length-2];
+
+  // ── Bollinger Bands (20, 2) ───────────────────────────────
+  const bbPeriod = 20;
+  const bbSlice  = closes.slice(-bbPeriod);
+  const bbMid    = bbSlice.reduce((a,b)=>a+b,0)/bbPeriod;
+  const bbStd    = Math.sqrt(bbSlice.map(v=>(v-bbMid)**2).reduce((a,b)=>a+b,0)/bbPeriod);
+  const bbUpper  = Math.round((bbMid + 2*bbStd)*100)/100;
+  const bbLower  = Math.round((bbMid - 2*bbStd)*100)/100;
+  const bbWidth  = Math.round(((bbUpper-bbLower)/bbMid)*10000)/100; // % width
+  const bbPct    = Math.round(((currentClose-bbLower)/(bbUpper-bbLower))*100); // 0=at lower, 100=at upper
+  const atBBUpper = bbPct > 85;
+  const atBBLower = bbPct < 15;
+  const bbSqueeze = bbWidth < 3.5; // narrow bands = squeeze = breakout pending
+
+  // ── Stochastic (14, 3) ────────────────────────────────────
+  const stochPeriod = 14;
+  const stochSlice  = ohlcv.slice(-stochPeriod);
+  const stochHigh   = Math.max(...stochSlice.map(d=>d.high));
+  const stochLow    = Math.min(...stochSlice.map(d=>d.low));
+  const stochK      = Math.round(((currentClose-stochLow)/(stochHigh-stochLow||1))*100);
+  // %D = 3-period SMA of %K (simplified: use last 3 days)
+  const stochSlice3 = ohlcv.slice(-stochPeriod-2);
+  const kVals = [0,1,2].map(offset => {
+    const sl = stochSlice3.slice(offset, offset+stochPeriod);
+    const hi = Math.max(...sl.map(d=>d.high));
+    const lo = Math.min(...sl.map(d=>d.low));
+    return Math.round(((sl[sl.length-1].close-lo)/(hi-lo||1))*100);
+  });
+  const stochD = Math.round(kVals.reduce((a,b)=>a+b,0)/3);
+  const stochOverbought = stochK > 80;
+  const stochOversold   = stochK < 20;
+
+  // ── Volume analysis ───────────────────────────────────────
+  const volumes20   = ohlcv.slice(-20).map(d=>d.volume).filter(v=>v>0);
+  const avgVol20    = volumes20.length ? volumes20.reduce((a,b)=>a+b,0)/volumes20.length : 0;
+  const todayVol    = ohlcv[n-1].volume || 0;
+  const volRatio    = avgVol20 > 0 ? Math.round((todayVol/avgVol20)*100)/100 : null;
+  const highVolume  = volRatio !== null && volRatio > 1.3;
+  const lowVolume   = volRatio !== null && volRatio < 0.7;
+  // Volume trend (is volume increasing or decreasing over last 5 days?)
+  const vol5 = ohlcv.slice(-5).map(d=>d.volume).filter(v=>v>0);
+  const volTrend = vol5.length >= 4 ?
+    (vol5[vol5.length-1] > vol5[0] ? 'Rising' : 'Falling') : 'Unknown';
+
+  // ── Pivot Points (from yesterday's OHLC) ─────────────────
+  const yd = ohlcv[n-2]; // yesterday
+  const pivot = Math.round(((yd.high + yd.low + yd.close)/3)*100)/100;
+  const r1    = Math.round((2*pivot - yd.low)*100)/100;
+  const r2    = Math.round((pivot + (yd.high - yd.low))*100)/100;
+  const r3    = Math.round((yd.high + 2*(pivot - yd.low))*100)/100;
+  const s1    = Math.round((2*pivot - yd.high)*100)/100;
+  const s2    = Math.round((pivot - (yd.high - yd.low))*100)/100;
+  const s3    = Math.round((yd.low - 2*(yd.high - pivot))*100)/100;
+  // Which pivot level is closest to current price?
+  const pivotLevels = [{l:'R3',v:r3},{l:'R2',v:r2},{l:'R1',v:r1},{l:'PP',v:pivot},{l:'S1',v:s1},{l:'S2',v:s2},{l:'S3',v:s3}];
+  const nearestPivot = pivotLevels.reduce((a,b)=>Math.abs(b.v-currentClose)<Math.abs(a.v-currentClose)?b:a);
+  const abovePivot   = currentClose > pivot;
 
   // ── Support & Resistance ──────────────────────────────────
   function findLevels(ohlcv, lookback=120) {
@@ -1802,6 +1936,19 @@ function computeAnalytics(ohlcv, ticker) {
     todayGapPct, gapUp, gapDown,
     gapFillRate,
     last20Closes,
+    // MACD
+    macdVal, signalVal, macdHist, macdBullish, macdCrossUp, macdCrossDown,
+    // Bollinger Bands
+    bbUpper, bbLower: Math.round(bbLower*100)/100, bbMid: Math.round(bbMid*100)/100,
+    bbWidth, bbPct, atBBUpper, atBBLower, bbSqueeze,
+    // Stochastic
+    stochK, stochD, stochOverbought, stochOversold,
+    // Volume
+    volRatio, highVolume, lowVolume, volTrend,
+    avgVol20: Math.round(avgVol20),
+    // Pivot points
+    pivot, r1, r2, r3, s1, s2, s3,
+    nearestPivot, abovePivot,
   };
 }
 
@@ -1844,13 +1991,29 @@ Today is ${todayDow} — historical win rate: ${todayDowStat.winRate||'?'}% | av
 Day-of-week stats: ${Object.entries(dow).map(([d,s])=>`${d}: ${s.winRate}%WR $${s.avgRange}ADR`).join(' | ')}
 Catalyst day stats (top 10% range days): avg move $${h.avgCatalystMove}, bullish ${h.catalystUpPct}% of the time
 PATTERN FLAGS (from actual OHLC — use these for trade bias):
-- NR7: ${h.nr7?'YES — narrowest range in 7 days. Expect a BREAKOUT move. Favor wider spreads.':'No'}
-- NR10: ${h.nr10?'YES — narrowest range in 10 days. High compression, big move likely.':'No'}
-- Inside Day: ${h.insideDay?'YES — price compressed inside yesterday. Breakout pending.':'No'}
-- Outside Day: ${h.outsideDay?'YES — price engulfed yesterday. Trend continuation likely.':'No'}
-- Gap today: ${h.gapUp?'GAP UP '+h.todayGapPct+'%':h.gapDown?'GAP DOWN '+Math.abs(h.todayGapPct)+'%':'No significant gap ('+h.todayGapPct+'%)'}
-- Historical gap fill rate: ${h.gapFillRate!==null?h.gapFillRate+'% of gaps fill back to prev close':'insufficient data'}
-- Current streak: ${h.upStreak>1?h.upStreak+' consecutive UP days':h.downStreak>1?h.downStreak+' consecutive DOWN days':'No streak'}`;
+- NR7: ${h.nr7?'YES — narrowest range in 7 days. Expect a BREAKOUT move.':'No'}
+- NR10: ${h.nr10?'YES — narrowest range in 10 days. High compression.':'No'}
+- Inside Day: ${h.insideDay?'YES — price inside yesterday. Breakout pending.':'No'}
+- Outside Day: ${h.outsideDay?'YES — engulfed yesterday. Trend continuation likely.':'No'}
+- Gap today: ${h.gapUp?'GAP UP '+h.todayGapPct+'%':h.gapDown?'GAP DOWN '+Math.abs(h.todayGapPct)+'%':'No gap'}
+- Gap fill rate (hist): ${h.gapFillRate!==null?h.gapFillRate+'%':'N/A'}
+- Streak: ${h.upStreak>1?h.upStreak+' UP days':h.downStreak>1?h.downStreak+' DOWN days':'No streak'}
+
+MOMENTUM INDICATORS (real computed from OHLC):
+- MACD: ${h.macdVal} vs Signal ${h.signalVal} → Histogram ${h.macdHist} → ${h.macdBullish?'BULLISH':'BEARISH'}${h.macdCrossUp?' ⚡ FRESH BULLISH CROSSOVER TODAY':h.macdCrossDown?' ⚡ FRESH BEARISH CROSSOVER TODAY':''}
+- Bollinger Bands: Upper $${h.bbUpper} / Mid $${h.bbMid} / Lower $${h.bbLower} | Width ${h.bbWidth}% | %B position ${h.bbPct}%
+  ${h.atBBUpper?'⚠ AT UPPER BAND — overbought/resistance':h.atBBLower?'⚠ AT LOWER BAND — oversold/support':h.bbSqueeze?'⚡ BB SQUEEZE — breakout imminent':'Normal band position'}
+- Stochastic: %K=${h.stochK} %D=${h.stochD} → ${h.stochOverbought?'OVERBOUGHT >80':h.stochOversold?'OVERSOLD <20':'Neutral'}
+- Volume today: ${h.volRatio!==null?'${h.volRatio}x average ('+  (h.highVolume?'HIGH — conviction signal':h.lowVolume?'LOW — weak move warning':'Normal') +')':'N/A'}
+- Volume trend (5d): ${h.volTrend}
+
+PIVOT POINTS (from yesterday OHLC — key intraday levels):
+- R3: $${h.r3} | R2: $${h.r2} | R1: $${h.r1}
+- Pivot: $${h.pivot} | S1: $${h.s1} | S2: $${h.s2} | S3: $${h.s3}
+- Current price ${h.abovePivot?'ABOVE':'BELOW'} pivot | Nearest level: ${h.nearestPivot?h.nearestPivot.l+' at $'+h.nearestPivot.v:'N/A'}
+- USE pivot levels for strike selection and stop placement
+
+${h.rsVsSpy1d!==undefined?'IWM VS SPY RELATIVE STRENGTH:\n- Today: IWM '+(h.rsVsSpy1d>=0?'+':'')+h.rsVsSpy1d+'% vs SPY → '+(h.smallCapLeading?'SMALL CAPS LEADING — bullish':h.smallCapLagging?'SMALL CAPS LAGGING — bearish':'Neutral rotation')+'\n- 5-day: IWM '+(h.rsVsSpy5d>=0?'+':'')+h.rsVsSpy5d+'% vs SPY':''}`;
 }
 
 // Render the Historical Intelligence tab
@@ -1996,6 +2159,78 @@ function renderHistTab() {
         <div class="t-row"><span class="t-label">5-day momentum</span><span class="t-val ${parseFloat(h.last5Change)>=0?'green':'red'}">${parseFloat(h.last5Change)>=0?'+':''}${h.last5Change}%</span></div>
         <div class="t-row"><span class="t-label">20-day momentum</span><span class="t-val ${parseFloat(h.last20Change)>=0?'green':'red'}">${parseFloat(h.last20Change)>=0?'+':''}${h.last20Change}%</span></div>
       </div>
+    </div>
+
+    <div class="card card-blue">
+      <div class="card-head">
+        <div class="card-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+        <div class="card-title">Momentum indicators — real computed</div>
+      </div>
+      <div class="metrics-4" style="margin-bottom:10px;">
+        <div class="metric">
+          <div class="m-label">MACD</div>
+          <div class="m-val ${h.macdBullish?'green':'red'}">${h.macdVal}</div>
+          <div class="m-sub">Signal ${h.signalVal} · ${h.macdCrossUp?'🔺 Cross up today':h.macdCrossDown?'🔻 Cross down today':h.macdBullish?'Bullish':'Bearish'}</div>
+        </div>
+        <div class="metric">
+          <div class="m-label">Stochastic %K/%D</div>
+          <div class="m-val ${h.stochOverbought?'red':h.stochOversold?'green':'amber'}">${h.stochK}/${h.stochD}</div>
+          <div class="m-sub">${h.stochOverbought?'Overbought >80':h.stochOversold?'Oversold <20':'Neutral zone'}</div>
+        </div>
+        <div class="metric">
+          <div class="m-label">BB position (%B)</div>
+          <div class="m-val ${h.atBBUpper?'red':h.atBBLower?'green':'amber'}">${h.bbPct}%</div>
+          <div class="m-sub">${h.atBBUpper?'At upper band':h.atBBLower?'At lower band':h.bbSqueeze?'Squeeze!':'Mid-range'}</div>
+        </div>
+        <div class="metric">
+          <div class="m-label">Volume vs avg</div>
+          <div class="m-val ${h.volRatio!==null?(h.highVolume?'green':h.lowVolume?'red':'amber'):''}">
+            ${h.volRatio!==null?h.volRatio+'x':'N/A'}
+          </div>
+          <div class="m-sub">${h.highVolume?'High — conviction':h.lowVolume?'Low — weak signal':'Normal · '+h.volTrend}</div>
+        </div>
+      </div>
+      <div class="metrics-2">
+        <div class="metric">
+          <div class="m-label">Bollinger Bands</div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;margin-top:4px;">
+            <span style="color:var(--green-text);">Lower $${h.bbLower}</span>
+            <span>Mid $${h.bbMid}</span>
+            <span style="color:var(--red-text);">Upper $${h.bbUpper}</span>
+          </div>
+          <div class="m-sub" style="margin-top:4px;">Width ${h.bbWidth}% ${h.bbSqueeze?'⚡ SQUEEZE — breakout pending':''}</div>
+        </div>
+        <div class="metric">
+          <div class="m-label">IWM vs SPY today</div>
+          <div class="m-val ${h.rsVsSpy1d!==undefined?(h.smallCapLeading?'green':h.smallCapLagging?'red':'amber'):''}">
+            ${h.rsVsSpy1d!==undefined?(h.rsVsSpy1d>=0?'+':'')+h.rsVsSpy1d+'%':'No SPY data'}
+          </div>
+          <div class="m-sub">${h.rsVsSpy1d!==undefined?(h.smallCapLeading?'Small caps leading — bullish':h.smallCapLagging?'Small caps lagging — bearish':'Neutral rotation'):'Load with IWM selected'}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-green">
+      <div class="card-head">
+        <div class="card-icon"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
+        <div class="card-title">Pivot points — today's key levels</div>
+        <span class="tag ${h.abovePivot?'green':'red'}" style="margin-left:auto;">Price ${h.abovePivot?'above':'below'} pivot</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;text-align:center;">
+        ${['R3','R2','R1','PP','S1','S2','S3'].map(function(lbl,i){
+          var val=[h.r3,h.r2,h.r1,h.pivot,h.s1,h.s2,h.s3][i];
+          var isNearest = h.nearestPivot && h.nearestPivot.l===lbl;
+          var isR=lbl.startsWith('R'), isS=lbl.startsWith('S'), isPP=lbl==='PP';
+          var bg=isR?'var(--red-light)':isS?'var(--green-light)':'var(--blue-light)';
+          var col=isR?'var(--red-text)':isS?'var(--green-text)':'var(--blue-text)';
+          return '<div style="background:'+bg+';border:1.5px solid '+(isNearest?col:'transparent')+';border-radius:6px;padding:6px 2px;">'
+            +'<div style="font-size:9px;font-weight:600;color:'+col+';">'+lbl+'</div>'
+            +'<div style="font-size:12px;font-weight:600;color:var(--text);">$'+val+'</div>'
+            +(isNearest?'<div style="font-size:8px;color:'+col+';">nearest</div>':'')
+            +'</div>';
+        }).join('')}
+      </div>
+      <div style="font-size:10px;color:var(--text3);margin-top:8px;">Use R1 as first resistance target, S1 as first support/stop. Nearest to price highlighted.</div>
     </div>
 
     <div class="card card-teal" style="margin-top:0;">
