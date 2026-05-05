@@ -1585,7 +1585,7 @@ async function loadHistoricalData(forceRefresh=false) {
     localStorage.setItem(HIST_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: analytics }));
     window._arthaHist = analytics;
     updateHistStatus(analytics, status, btn);
-    showToast(`${closes.length} days of ${ticker} data loaded`, 'success');
+    showToast(ohlcv.length + ' days of ' + ticker + ' data loaded', 'success');
     return analytics;
 
   } catch(err) {
