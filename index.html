@@ -1302,13 +1302,19 @@ function renderOhlcTab(d, inputs) {
     ? 'Anchored to prev day H:$'+enhanced.prevHigh+'/L:$'+enhanced.prevLow+' · Catalyst mult: '+catMult+'x'
     : '';
 
-  // Clamp to pivot levels
+  // Clamp to pivot levels ONLY if pivot is above current price (prevents capping below price)
   if(h){
-    predHigh     = Math.min(predHigh,     h.r2+0.5);
-    predHighBull = Math.min(predHighBull, h.r3+0.5);
-    predLow      = Math.max(predLow,      h.s2-0.5);
-    predLowBear  = Math.max(predLowBear,  h.s3-0.5);
+    if(h.r2 && h.r2 > price) predHigh     = Math.min(predHigh,     h.r2 + 0.5);
+    if(h.r3 && h.r3 > price) predHighBull = Math.min(predHighBull, h.r3 + 0.5);
+    if(h.s2 && h.s2 < price) predLow      = Math.max(predLow,      h.s2 - 0.5);
+    if(h.s3 && h.s3 < price) predLowBear  = Math.max(predLowBear,  h.s3 - 0.5);
   }
+  // Final safety — ensure High > price > Low always
+  predHigh     = Math.max(predHigh,     price + 0.10);
+  predHighBull = Math.max(predHighBull, price + 0.20);
+  predLow      = Math.min(predLow,      price - 0.10);
+  predLowBear  = Math.min(predLowBear,  price - 0.20);
+  predClose    = Math.max(Math.min(predClose, predHigh - 0.05), predLow + 0.05);
 
   var biasColor  = isBull ? 'green' : isBear ? 'red' : 'amber';
   var shortStrike = inputs.shortStrike || Math.round(pr) + 4;
@@ -3086,34 +3092,42 @@ function computeEnhancedOhlc(h, price, catRisk, bias){
   var prevClose = prevDay ? prevDay.close : price;
   var adr       = h.adr20;
 
-  // Catalyst-specific multipliers computed from history
   var catMult = computeCatalystMultiplier(h, catRisk);
+  var adjAdr  = adr * catMult;
+  var isBull  = bias === 'Bullish';
+  var isBear  = bias === 'Bearish';
 
-  // Previous day high/low as magnetic anchor (~60% of days test one of these)
-  var adjAdr = adr * catMult;
-  var isBull = bias === 'Bullish', isBear = bias === 'Bearish';
+  // ── RULE: predHigh must ALWAYS be above current price ─────────────────
+  // ── RULE: predLow must ALWAYS be below current price ──────────────────
+  // Previous day high/low are used as TARGETS, not caps.
+  // If prev day high < current price (gap up scenario), target is ADR-based.
 
-  // Base predictions anchored to prev day levels
-  var predHigh  = isBull
-    ? Math.min(prevHigh + adjAdr * 0.4, price + adjAdr * 0.75)
-    : price + adjAdr * (isBear ? 0.30 : 0.50);
+  var minHigh = price + 0.10; // at minimum $0.10 above current price
+  var maxLow  = price - 0.10; // at minimum $0.10 below current price
 
-  var predLow   = isBear
-    ? Math.max(prevLow - adjAdr * 0.4, price - adjAdr * 0.75)
-    : price - adjAdr * (isBull ? 0.30 : 0.50);
+  // Upside prediction
+  var adrUpside = adjAdr * (isBull ? 0.70 : isBear ? 0.35 : 0.52);
+  var prevHighTarget = prevHigh > price ? (prevHigh - price) * 0.6 : 0; // pull toward prev high only if above
+  var predHigh = price + Math.max(adrUpside, prevHighTarget, 0.10);
 
-  // Round to 2dp
-  predHigh = Math.round(predHigh * 100) / 100;
-  predLow  = Math.round(predLow  * 100) / 100;
+  // Downside prediction
+  var adrDownside = adjAdr * (isBear ? 0.70 : isBull ? 0.35 : 0.52);
+  var prevLowTarget = prevLow < price ? (price - prevLow) * 0.6 : 0; // pull toward prev low only if below
+  var predLow = price - Math.max(adrDownside, prevLowTarget, 0.10);
+
+  // Safety clamp — never cross each other
+  predHigh = Math.max(predHigh, minHigh);
+  predLow  = Math.min(predLow,  maxLow);
+  if(predHigh <= predLow) predHigh = predLow + adjAdr * 0.5;
 
   return {
-    prevHigh:     Math.round(prevHigh  * 100) / 100,
-    prevLow:      Math.round(prevLow   * 100) / 100,
-    prevClose:    Math.round(prevClose * 100) / 100,
-    adjAdr:       Math.round(adjAdr    * 100) / 100,
-    catMult:      catMult,
-    predHighAnchored: predHigh,
-    predLowAnchored:  predLow,
+    prevHigh:         Math.round(prevHigh  * 100) / 100,
+    prevLow:          Math.round(prevLow   * 100) / 100,
+    prevClose:        Math.round(prevClose * 100) / 100,
+    adjAdr:           Math.round(adjAdr    * 100) / 100,
+    catMult:          catMult,
+    predHighAnchored: Math.round(predHigh  * 100) / 100,
+    predLowAnchored:  Math.round(predLow   * 100) / 100,
   };
 }
 
