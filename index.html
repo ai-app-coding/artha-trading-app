@@ -647,6 +647,9 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
         <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:6px;" onclick="loadHistoricalData(true)" id="histBtn">
           ↓ Load IWM History (2yr)
         </button>
+        <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:4px;font-size:10px;" onclick="clearHistCache()">
+          ✕ Clear cache &amp; reload fresh
+        </button>
         <div class="inp-row" style="margin-bottom:6px;">
           <div class="inp-label" style="font-size:9px;">Twelve Data API key <span style="color:var(--teal-text);font-size:8px;">free at twelvedata.com</span></div>
           <div style="display:flex;gap:4px;">
@@ -756,6 +759,13 @@ window.addEventListener('DOMContentLoaded',()=>{
   if(!localStorage.getItem('artha_tdkey')) {
     localStorage.setItem('artha_tdkey','479f7bf68cd442c9945176141de92e92');
   }
+  // Clear old broken cache formats so fresh data is loaded
+  ['artha_hist_v1','artha_hist_v2','artha_hist_v3'].forEach(function(k){
+    if(localStorage.getItem(k)) {
+      localStorage.removeItem(k);
+      console.log('[Artha] Cleared stale cache: ' + k);
+    }
+  });
   loadHistoricalData(false);
   // Init cash mode toggle
   updateCashToggleUI();
@@ -985,6 +995,17 @@ function saveTdKey(){
   loadHistoricalData(true);
 }
 
+function clearHistCache(){
+  ['artha_hist_v1','artha_hist_v2','artha_hist_v3','artha_hist_v4'].forEach(function(k){
+    localStorage.removeItem(k);
+  });
+  window._arthaHist = null;
+  const s = document.getElementById('histStatus');
+  if(s){ s.textContent='Cleared'; s.style.color='var(--amber-text)'; }
+  showToast('Cache cleared — reloading fresh data', 'warn');
+  loadHistoricalData(true);
+}
+
 function saveAvKey(){
   const k = document.getElementById('avKeyInput') && document.getElementById('avKeyInput').value.trim();
   if(!k){ alert('Paste your Alpha Vantage API key first'); return; }
@@ -1164,7 +1185,10 @@ async function runAnalysis(){
     document.getElementById('stateLoading').style.display='none';
     document.getElementById('stateResults').style.display='block';
     try {
-      renderResults(json,{price,vix,ivRank,netDebit,maxProfit,maxLoss,maxContracts,accountSize,riskPct,longStrike,shortStrike,ticker:selectedTicker});
+      var renderInputs = {price,vix,ivRank,netDebit,maxProfit,maxLoss,maxContracts,accountSize,riskPct,longStrike,shortStrike,ticker:selectedTicker};
+      window._lastAnalysisResult = json;
+      window._lastAnalysisInputs = renderInputs;
+      renderResults(json, renderInputs);
     } catch(renderErr){
       document.getElementById('stateResults').innerHTML=showError('Render error — analysis succeeded but display failed',renderErr.message,JSON.stringify(json,null,2).slice(0,500));
     }
@@ -1997,7 +2021,7 @@ function exportCSV(){
 // ============================================================
 // HISTORICAL DATA ENGINE
 // ============================================================
-const HIST_CACHE_KEY = 'artha_hist_v2';
+const HIST_CACHE_KEY = 'artha_hist_v4'; // bumped to bust old broken cache
 const HIST_CACHE_DAYS = 1; // refresh daily
 
 async function loadHistoricalData(forceRefresh=false) {
@@ -3177,6 +3201,16 @@ function switchTab(name,el){
   if(name==='hist') {
     if(!window._arthaHist) loadHistoricalData().then(()=>renderHistTabInto());
     else renderHistTabInto();
+  }
+  // OHLC tab: re-render with current live price every time it's opened
+  if(name==='ohlc') {
+    var ohlcPane = document.getElementById('tab-ohlc');
+    var currentPrice = parseFloat(document.getElementById('price')?.value) || 0;
+    if(ohlcPane && currentPrice > 0 && window._lastAnalysisResult) {
+      var inp = window._lastAnalysisInputs || {};
+      inp.price = currentPrice; // always use current price
+      ohlcPane.innerHTML = renderOhlcTab(window._lastAnalysisResult, inp);
+    }
   }
 }
 
