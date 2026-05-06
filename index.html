@@ -1302,18 +1302,18 @@ function renderOhlcTab(d, inputs) {
     ? 'Anchored to prev day H:$'+enhanced.prevHigh+'/L:$'+enhanced.prevLow+' · Catalyst mult: '+catMult+'x'
     : '';
 
-  // Clamp to pivot levels ONLY if pivot is above current price (prevents capping below price)
+  // Clamp to pivot levels ONLY if pivot is above/below current price
   if(h){
-    if(h.r2 && h.r2 > price) predHigh     = Math.min(predHigh,     h.r2 + 0.5);
-    if(h.r3 && h.r3 > price) predHighBull = Math.min(predHighBull, h.r3 + 0.5);
-    if(h.s2 && h.s2 < price) predLow      = Math.max(predLow,      h.s2 - 0.5);
-    if(h.s3 && h.s3 < price) predLowBear  = Math.max(predLowBear,  h.s3 - 0.5);
+    if(h.r2 && h.r2 > pr) predHigh     = Math.min(predHigh,     h.r2 + 0.5);
+    if(h.r3 && h.r3 > pr) predHighBull = Math.min(predHighBull, h.r3 + 0.5);
+    if(h.s2 && h.s2 < pr) predLow      = Math.max(predLow,      h.s2 - 0.5);
+    if(h.s3 && h.s3 < pr) predLowBear  = Math.max(predLowBear,  h.s3 - 0.5);
   }
-  // Final safety — ensure High > price > Low always
-  predHigh     = Math.max(predHigh,     price + 0.10);
-  predHighBull = Math.max(predHighBull, price + 0.20);
-  predLow      = Math.min(predLow,      price - 0.10);
-  predLowBear  = Math.min(predLowBear,  price - 0.20);
+  // Final safety — ensure High > pr > Low ALWAYS, no exceptions
+  predHigh     = Math.max(predHigh,     pr + 0.10);
+  predHighBull = Math.max(predHighBull, pr + 0.20);
+  predLow      = Math.min(predLow,      pr - 0.10);
+  predLowBear  = Math.min(predLowBear,  pr - 0.20);
   predClose    = Math.max(Math.min(predClose, predHigh - 0.05), predLow + 0.05);
 
   var biasColor  = isBull ? 'green' : isBear ? 'red' : 'amber';
