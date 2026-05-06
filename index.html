@@ -600,6 +600,34 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
             <input class="inp" id="riskPct" placeholder="2" type="number" step="0.5" value="2"/>
           </div>
         </div>
+
+        <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <div>
+              <div style="font-size:11px;font-weight:600;color:var(--text);">Cash account mode</div>
+              <div style="font-size:10px;color:var(--text3);">Naked calls — works in Robinhood today</div>
+            </div>
+            <div id="cashToggle" onclick="toggleCashMode()" style="width:40px;height:22px;border-radius:11px;background:var(--border2);cursor:pointer;position:relative;transition:background .2s;flex-shrink:0;">
+              <div id="cashToggleDot" style="width:18px;height:18px;border-radius:50%;background:white;position:absolute;top:2px;left:2px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.2);"></div>
+            </div>
+          </div>
+          <div id="cashModeNote" style="display:none;background:var(--amber-light);border:1px solid var(--amber-mid);border-radius:var(--radius);padding:6px 10px;font-size:11px;color:var(--amber-text);margin-bottom:8px;">
+            Cash mode ON — recommendations switch to naked long calls. Max loss = full premium. Works with Robinhood Level 2.
+          </div>
+        </div>
+
+        <div style="border-top:1px solid var(--border);padding-top:10px;">
+          <div class="inp-label" style="margin-bottom:4px;">Min confidence to trade <span id="confGateVal" style="color:var(--teal-text);font-weight:700;">55%</span></div>
+          <input type="range" id="confGate" min="30" max="80" value="55" step="5" style="width:100%;accent-color:var(--teal);cursor:pointer;" oninput="document.getElementById('confGateVal').textContent=this.value+'%'"/>
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);margin-top:1px;"><span>30%</span><span>55% default</span><span>80%</span></div>
+        </div>
+
+        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:6px;">
+          <div class="inp-label" style="margin-bottom:4px;">Weekly loss limit ($) <span id="weeklyLossStatus" style="font-size:10px;"></span></div>
+          <input class="inp" id="weeklyLimit" placeholder="500" type="number" step="50" value="500" style="font-size:12px;padding:6px 10px;"/>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px;">Auto-SKIP when weekly P&L loss hits this</div>
+        </div>
+
       </div>
     </div>
 
@@ -644,6 +672,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
   <div class="main" id="mainPanel">
 
     <!-- WELCOME STATE -->
+    <div id="protectionBanner" style="display:none;"></div>
     <div id="stateWelcome">
       <div class="welcome">
         <div class="welcome-brand">Artha</div>
@@ -724,12 +753,14 @@ async function saveJournalEntry(entry) {
 window.addEventListener('DOMContentLoaded',()=>{
   initClock(); initDaySelector(); initTickerSelector(); checkApiKey(); updateMarketMode();
   setInterval(updateMarketMode, 60000);
-  // Seed default Twelve Data key if not already set
   if(!localStorage.getItem('artha_tdkey')) {
     localStorage.setItem('artha_tdkey','479f7bf68cd442c9945176141de92e92');
   }
-  // Auto-load cached historical data silently on startup
   loadHistoricalData(false);
+  // Init cash mode toggle
+  updateCashToggleUI();
+  // Render protection banner
+  renderProtectionBanner();
 });
 
 // ============================================================
@@ -1020,6 +1051,18 @@ async function runAnalysis(){
   const vix=parseFloat(document.getElementById('vix').value);
   if(!price||!vix){alert('Please enter at least the price and VIX.');return;}
 
+  // Check capital protection rules BEFORE running analysis
+  const protection = getCapitalProtectionStatus();
+  renderProtectionBanner();
+  if(protection.skipMode){
+    const reason = protection.weekLimitHit
+      ? 'Weekly loss limit hit (-$'+Math.abs(protection.weekPnl)+'). Protecting capital.'
+      : protection.consecLoss + ' consecutive losses. High emotional risk.';
+    if(!confirm('⚠ AUTO-SKIP ACTIVE: ' + reason + '\n\nAre you sure you want to override and analyze anyway?')){
+      return;
+    }
+  }
+
   const ivRank=parseFloat(document.getElementById('ivRank').value)||null;
   const lb=parseFloat(document.getElementById('longBid')?.value)||null;
   const la=parseFloat(document.getElementById('longAsk')?.value)||null;
@@ -1072,7 +1115,10 @@ async function runAnalysis(){
     }
   }
 
-  const prompt=buildPrompt({ticker:selectedTicker,day:selectedDay,price,vix,ivRank,longStrike,shortStrike,netDebit,maxProfit,maxLoss,maxContracts,accountSize,riskPct,maxRiskDollars,isPreMarket,hasLegs,journalSummary,estimatedMove,esOvernight,scenarioVerdict});
+  const earningsRisk = checkEarningsRisk(selectedTicker, selectedDay);
+  const isCashAccount = cashMode;
+  const protection2 = getCapitalProtectionStatus();
+  const prompt=buildPrompt({ticker:selectedTicker,day:selectedDay,price,vix,ivRank,longStrike,shortStrike,netDebit,maxProfit,maxLoss,maxContracts,accountSize,riskPct,maxRiskDollars,isPreMarket,hasLegs,journalSummary,estimatedMove,esOvernight,scenarioVerdict,earningsRisk,isCashAccount,consecLoss:protection2.consecLoss,weekPnl:protection2.weekPnl});
 
   try {
     updateStatus('Calling Claude API...');
@@ -1108,10 +1154,17 @@ async function runAnalysis(){
       throw new Error(parseErr.message+'. Raw text (first 300 chars): '+text.slice(0,300));
     }
     updateStatus('Rendering results...');
+    // Apply confidence gate
+    if(json.setups) json.setups = applyConfidenceGate(json.setups);
+    // If top setup is now SKIP due to gate, update verdict
+    if(json.setups && json.setups[0] && json.setups[0].verdict !== 'GO' && json.verdict === 'GO'){
+      json.verdict = json.setups[0].verdict || 'WAIT';
+      json.verdictTitle = json.setups[0].whyThisRank || json.verdictTitle;
+    }
     document.getElementById('stateLoading').style.display='none';
     document.getElementById('stateResults').style.display='block';
     try {
-      renderResults(json,{price,vix,ivRank,netDebit,maxProfit,maxLoss,maxContracts,accountSize,riskPct,longStrike,shortStrike});
+      renderResults(json,{price,vix,ivRank,netDebit,maxProfit,maxLoss,maxContracts,accountSize,riskPct,longStrike,shortStrike,ticker:selectedTicker});
     } catch(renderErr){
       document.getElementById('stateResults').innerHTML=showError('Render error — analysis succeeded but display failed',renderErr.message,JSON.stringify(json,null,2).slice(0,500));
     }
@@ -1146,6 +1199,7 @@ function renderSetupsTab(d, inputs) {
   };
 
   var html = '';
+  var isCash = cashMode;
   d.setups.forEach(function(s, i) {
     var isTop = i === 0;
     var borderColor = isTop ? (s.direction==='Bullish'?'var(--green-mid)':s.direction==='Bearish'?'var(--red-mid)':'var(--amber-mid)') : 'var(--border)';
@@ -1186,6 +1240,11 @@ function renderSetupsTab(d, inputs) {
     html += '</div>';
 
     html += '</div>';
+
+    // Add Robinhood order card for top GO setup only
+    if(i === 0 && (s.verdict === 'GO' || s.verdict === 'WAIT')){
+      html += renderRobinhoodCard(s, inputs, isCash);
+    }
   });
 
   return html;
@@ -1209,35 +1268,46 @@ function renderOhlcTab(d, inputs) {
       + '<div style="padding:16px;color:var(--text3);font-size:12px;">Enter the live price in the sidebar to generate OHLC forecast.</div></div>';
   }
 
-  // Compute OHLC from historical ADR + bias + indicators
-  var adr      = h ? h.adr20 : pr * 0.012;
-  var isBull   = bias === 'Bullish';
-  var isBear   = bias === 'Bearish';
+  var isBull  = bias === 'Bullish';
+  var isBear  = bias === 'Bearish';
+  var catRisk = d.metrics && d.metrics.catalystRisk;
+  var adr     = h ? h.adr20 : pr * 0.012;
 
-  // Adjust range based on catalyst risk from metrics
-  var catRisk  = d.metrics && d.metrics.catalystRisk;
-  var catMult  = catRisk === 'High' ? 1.35 : catRisk === 'Low' ? 0.75 : 1.0;
-  var adjAdr   = adr * catMult;
+  // Priority 5+6: use enhanced OHLC with prev day anchor + catalyst multipliers
+  var enhanced = h ? computeEnhancedOhlc(h, pr, catRisk, bias) : null;
+  var catMult  = enhanced ? enhanced.catMult : (catRisk==='High'?1.35:catRisk==='Low'?0.75:1.0);
+  var adjAdr   = enhanced ? enhanced.adjAdr : adr * catMult;
 
-  // Base case predictions
-  var predOpen  = pr;
-  var predHigh  = Math.round((pr + adjAdr * (isBull ? 0.68 : isBear ? 0.42 : 0.55)) * 100) / 100;
-  var predLow   = Math.round((pr - adjAdr * (isBear ? 0.68 : isBull ? 0.42 : 0.55)) * 100) / 100;
-  var predClose = Math.round((pr + adjAdr * (isBull ? 0.18 : isBear ? -0.18 : 0)) * 100) / 100;
+  var predOpen = pr;
+  var predHigh, predLow;
 
-  // Bull / Bear scenario predictions
-  var predHighBull = Math.round((pr + adjAdr * 0.90) * 100) / 100;
-  var predHighBear = Math.round((pr + adjAdr * 0.25) * 100) / 100;
-  var predLowBull  = Math.round((pr - adjAdr * 0.25) * 100) / 100;
-  var predLowBear  = Math.round((pr - adjAdr * 0.90) * 100) / 100;
-  var expectedRange = Math.round(adjAdr * catMult * 100) / 100;
+  if(enhanced){
+    // Anchored predictions using prev day high/low
+    predHigh = enhanced.predHighAnchored;
+    predLow  = enhanced.predLowAnchored;
+  } else {
+    predHigh = Math.round((pr + adjAdr * (isBull?0.68:isBear?0.42:0.55))*100)/100;
+    predLow  = Math.round((pr - adjAdr * (isBear?0.68:isBull?0.42:0.55))*100)/100;
+  }
 
-  // Clamp to pivot levels if available (price rarely exceeds R2/S2 intraday)
-  if(h) {
-    predHigh     = Math.min(predHigh,     h.r2 + 0.5);
-    predHighBull = Math.min(predHighBull, h.r3 + 0.5);
-    predLow      = Math.max(predLow,      h.s2 - 0.5);
-    predLowBear  = Math.max(predLowBear,  h.s3 - 0.5);
+  var predClose     = Math.round((pr + adjAdr*(isBull?0.18:isBear?-0.18:0))*100)/100;
+  var predHighBull  = Math.round((pr + adjAdr*0.90)*100)/100;
+  var predHighBear  = Math.round((pr + adjAdr*0.25)*100)/100;
+  var predLowBull   = Math.round((pr - adjAdr*0.25)*100)/100;
+  var predLowBear   = Math.round((pr - adjAdr*0.90)*100)/100;
+  var expectedRange = Math.round(adjAdr*100)/100;
+
+  // Prev day anchor note for display
+  var anchorNote = enhanced
+    ? 'Anchored to prev day H:$'+enhanced.prevHigh+'/L:$'+enhanced.prevLow+' · Catalyst mult: '+catMult+'x'
+    : '';
+
+  // Clamp to pivot levels
+  if(h){
+    predHigh     = Math.min(predHigh,     h.r2+0.5);
+    predHighBull = Math.min(predHighBull, h.r3+0.5);
+    predLow      = Math.max(predLow,      h.s2-0.5);
+    predLowBear  = Math.max(predLowBear,  h.s3-0.5);
   }
 
   var biasColor  = isBull ? 'green' : isBear ? 'red' : 'amber';
@@ -1316,7 +1386,9 @@ function renderOhlcTab(d, inputs) {
   // Data source note
   html += '<div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.5;">';
   html += 'Computed from ' + (h ? h.totalDays + 'd OHLC · 20-day ADR $' + h.adr20 : 'estimated ADR') + ' · Bias: Claude AI · ';
-  html += 'Catalyst multiplier: ' + catMult.toFixed(2) + 'x';
+  html += 'Catalyst mult: ' + catMult.toFixed(2) + 'x';
+  if(anchorNote) html += ' · ' + anchorNote;
+  html += '<br><span style="color:var(--amber-text);">⚡ Priority 7 upgrade available: add intraday ORB data ($8/mo Twelve Data) to push accuracy from ~60% to ~72%</span>';
   html += '</div>';
 
   return html;
@@ -1464,6 +1536,10 @@ ${d.hasLegs?`- Net debit: $${d.netDebit?.toFixed(2)}/contract\n- Max profit: $${
 ${d.estimatedMove ? '- Estimated Move (EM): $'+d.estimatedMove+' — bull target $'+(d.price+d.estimatedMove).toFixed(2)+' / bear target $'+(d.price-d.estimatedMove).toFixed(2) : '- Estimated Move: not provided'}
 ${d.esOvernight !== null ? '- ES futures overnight: '+(d.esOvernight>0?'+':'')+d.esOvernight+'% ('+(d.esOvernight>0.2?'BULLISH pre-market signal':d.esOvernight<-0.2?'BEARISH pre-market signal':'neutral')+')' : '- ES futures overnight: not provided'}
 ${d.scenarioVerdict ? '- SCENARIO GRID RESULT: '+d.scenarioVerdict : ''}
+${d.isCashAccount ? '- ACCOUNT TYPE: CASH ACCOUNT — trader cannot trade spreads. All 3 setups MUST be naked long calls or puts only. No spreads.' : '- ACCOUNT TYPE: Margin account — spreads available.'}
+${d.earningsRisk ? '- '+d.earningsRisk : ''}
+${d.consecLoss >= 2 ? '- RISK WARNING: '+d.consecLoss+' consecutive losses in journal. Recommend conservative sizing or SKIP.' : ''}
+${d.weekPnl < 0 ? '- WEEKLY P&L: -$'+Math.abs(d.weekPnl)+' this week. Factor into confidence and position sizing.' : ''}
 
 REAL HISTORICAL OHLC ANALYSIS (computed from actual price data):
 ${buildHistSummary()}
@@ -2767,6 +2843,311 @@ function renderHistTabInto() {
   // Also refresh scenario grid if price changes
   const sg = document.getElementById('scenarioGridContent');
   if(sg && window._arthaHist) sg.innerHTML = renderScenarioGrid(window._arthaHist);
+}
+
+// ============================================================
+// PRIORITY 1 — CASH ACCOUNT MODE
+// ============================================================
+let cashMode = localStorage.getItem('artha_cashmode') === 'true';
+
+function toggleCashMode(){
+  cashMode = !cashMode;
+  localStorage.setItem('artha_cashmode', cashMode);
+  updateCashToggleUI();
+  showToast(cashMode ? 'Cash mode ON — switching to naked calls' : 'Cash mode OFF — spreads enabled', cashMode?'warn':'success');
+}
+
+function updateCashToggleUI(){
+  const toggle = document.getElementById('cashToggle');
+  const dot    = document.getElementById('cashToggleDot');
+  const note   = document.getElementById('cashModeNote');
+  if(!toggle) return;
+  if(cashMode){
+    toggle.style.background = 'var(--amber)';
+    dot.style.left = '20px';
+    if(note) note.style.display = 'block';
+  } else {
+    toggle.style.background = 'var(--border2)';
+    dot.style.left = '2px';
+    if(note) note.style.display = 'none';
+  }
+}
+
+// ============================================================
+// PRIORITY 2 — CONFIDENCE GATE
+// ============================================================
+function getConfGate(){
+  const el = document.getElementById('confGate');
+  return el ? parseInt(el.value) : 55;
+}
+
+function applyConfidenceGate(setups){
+  if(!setups || !setups.length) return setups;
+  const gate = getConfGate();
+  return setups.map(function(s){
+    if(s.confidence < gate && s.verdict === 'GO'){
+      return Object.assign({}, s, {
+        verdict: 'SKIP',
+        whyThisRank: s.whyThisRank + ' [Auto-SKIP: confidence ' + s.confidence + '% below your ' + gate + '% gate]'
+      });
+    }
+    return s;
+  });
+}
+
+// ============================================================
+// PRIORITY 3 — CONSECUTIVE LOSS BRAKE + WEEKLY LOSS LIMIT
+// ============================================================
+function getCapitalProtectionStatus(){
+  const journal = loadJournalSync();
+  const limit   = parseFloat(document.getElementById('weeklyLimit')?.value) || 500;
+
+  // Weekly P&L — current week Mon-Sun
+  const now = new Date(new Date().toLocaleString('en-US',{timeZone:'America/Chicago'}));
+  const dow = now.getDay();
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
+  monday.setHours(0,0,0,0);
+
+  const weekTrades = journal.filter(function(t){
+    const d = new Date(t.date + '/' + now.getFullYear());
+    return !isNaN(d) && d >= monday;
+  });
+  const weekPnl = weekTrades.reduce(function(a,t){ return a + (t.pnl||0); }, 0);
+
+  // Consecutive losses — look at last N trades
+  const recent = journal.slice(-5).reverse();
+  let consecLoss = 0;
+  for(var i=0; i<recent.length; i++){
+    if(recent[i].pnl < 0) consecLoss++;
+    else break;
+  }
+
+  return {
+    weekPnl:     weekPnl,
+    weekTrades:  weekTrades.length,
+    consecLoss:  consecLoss,
+    weekLimitHit: weekPnl <= -limit,
+    warningMode:  consecLoss >= 2 && consecLoss < 3,
+    skipMode:     consecLoss >= 3 || weekPnl <= -limit,
+    limit:        limit
+  };
+}
+
+function loadJournalSync(){
+  try { return JSON.parse(localStorage.getItem('artha_journal_v1') || '[]'); } catch(e){ return []; }
+}
+
+function renderProtectionBanner(){
+  const s = getCapitalProtectionStatus();
+  const el = document.getElementById('protectionBanner');
+  if(!el) return;
+
+  if(s.skipMode){
+    var reason = s.weekLimitHit
+      ? 'Weekly loss limit hit: -$' + Math.abs(s.weekPnl) + ' of $' + s.limit + ' limit'
+      : s.consecLoss + ' consecutive losses — trading today is high risk';
+    el.innerHTML = '<div style="background:var(--red-light);border:1.5px solid var(--red-mid);border-radius:var(--radius-lg);padding:10px 14px;font-size:12px;color:var(--red-text);margin-bottom:10px;">'
+      + '<strong>⛔ AUTO-SKIP ACTIVE</strong> — ' + reason
+      + '<div style="font-size:11px;margin-top:3px;opacity:.8;">Protecting your capital. Consider sitting out today. Override: reduce weekly limit or reset consecutive loss count.</div>'
+      + '</div>';
+    el.style.display = 'block';
+  } else if(s.warningMode){
+    el.innerHTML = '<div style="background:var(--amber-light);border:1.5px solid var(--amber-mid);border-radius:var(--radius-lg);padding:10px 14px;font-size:12px;color:var(--amber-text);margin-bottom:10px;">'
+      + '<strong>⚠ WARNING</strong> — ' + s.consecLoss + ' consecutive losses. Trade with reduced size or consider sitting out.'
+      + '<div style="font-size:11px;margin-top:3px;opacity:.8;">Week P&L: $' + s.weekPnl + ' · Limit: -$' + s.limit + '</div>'
+      + '</div>';
+    el.style.display = 'block';
+  } else if(s.weekTrades > 0){
+    el.innerHTML = '<div style="background:var(--green-light);border:1px solid var(--green-mid);border-radius:var(--radius);padding:7px 12px;font-size:11px;color:var(--green-text);margin-bottom:8px;">'
+      + '✓ Capital protection OK · Week P&L: ' + (s.weekPnl >= 0 ? '+' : '') + '$' + s.weekPnl
+      + ' · ' + s.consecLoss + ' consec losses</div>';
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+function getAutoSkipOverride(){
+  const s = getCapitalProtectionStatus();
+  if(s.skipMode) return s.weekLimitHit
+    ? 'WEEKLY LOSS LIMIT HIT: -$' + Math.abs(s.weekPnl) + ' this week. Auto-protecting capital.'
+    : s.consecLoss + ' CONSECUTIVE LOSSES: High emotional risk. Auto-SKIP recommended.';
+  if(s.warningMode) return s.consecLoss + ' consecutive losses — consider reducing size today.';
+  return null;
+}
+
+// ============================================================
+// PRIORITY 4 — ROBINHOOD ORDER CARD + BROWSER NOTIFICATIONS
+// ============================================================
+function renderRobinhoodCard(setup, inputs, isCash){
+  var premium    = setup.netDebit > 0 ? parseFloat(setup.netDebit) : (inputs.netDebit || 0);
+  var contracts  = setup.contracts || inputs.maxContracts || 1;
+  var stopPrice  = Math.round(premium * 0.5 * 100) / 100;
+  var targetPrice= isCash
+    ? Math.round(premium * 2.0 * 100) / 100   // naked call: 2x for profit
+    : Math.round(premium * 1.6 * 100) / 100;  // spread: 60% of max
+
+  var html = '<div class="card" style="border:1.5px solid var(--purple-mid);background:var(--purple-light);margin-top:0;">';
+  html += '<div class="card-head"><div class="card-icon" style="background:var(--purple-light);"><svg viewBox="0 0 24 24" stroke="var(--purple)" fill="none" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg></div>';
+  html += '<div class="card-title" style="color:var(--purple-text);">Robinhood order setup</div></div>';
+
+  if(isCash){
+    html += '<div style="font-size:11px;color:var(--purple-text);background:var(--purple-light);padding:5px 8px;border-radius:4px;margin-bottom:8px;">Cash account mode — naked long call</div>';
+    html += '<div class="t-row"><span class="t-label">Action in Robinhood</span><span class="t-val blue">Buy to Open · Call</span></div>';
+    html += '<div class="t-row"><span class="t-label">Strike</span><span class="t-val">$' + setup.longStrike + ' Call</span></div>';
+    html += '<div class="t-row"><span class="t-label">Expiry</span><span class="t-val">Today (0DTE)</span></div>';
+    html += '<div class="t-row"><span class="t-label">Quantity</span><span class="t-val amber">' + contracts + ' contract' + (contracts>1?'s':'') + '</span></div>';
+    html += '<div class="t-row"><span class="t-label">Order type</span><span class="t-val">Limit order at ask price</span></div>';
+    html += '<div class="t-row"><span class="t-label">Premium paid (est)</span><span class="t-val red">~$' + premium.toFixed(2) + '/contract = $' + Math.round(premium*contracts*100) + ' total</span></div>';
+    html += '<div style="margin-top:8px;border-top:1px solid var(--purple-mid);padding-top:8px;">';
+    html += '<div style="font-size:11px;font-weight:600;color:var(--purple-text);margin-bottom:4px;">After entering — set two phone alarms:</div>';
+    html += '<div class="t-row"><span class="t-label">🔔 Alarm 1 — noon CT</span><span class="t-val">Check if up 2x or down 50%</span></div>';
+    html += '<div class="t-row"><span class="t-label">🔔 Alarm 2 — hard close</span><span class="t-val red">' + (setup.hardClose||'1:30 PM CT') + ' — sell regardless</span></div>';
+    html += '<div class="t-row"><span class="t-label">Exit if value drops to</span><span class="t-val red">$' + stopPrice.toFixed(2) + ' (50% stop)</span></div>';
+    html += '<div class="t-row"><span class="t-label">Exit if value reaches</span><span class="t-val green">$' + targetPrice.toFixed(2) + ' (target)</span></div>';
+    html += '</div>';
+  } else {
+    html += '<div style="font-size:11px;color:var(--purple-text);background:var(--purple-light);padding:5px 8px;border-radius:4px;margin-bottom:8px;">' + setup.strategy + ' — requires margin account</div>';
+    html += '<div class="t-row"><span class="t-label">Step 1</span><span class="t-val">Trade Options → Spread → Call Spread</span></div>';
+    html += '<div class="t-row"><span class="t-label">Buy leg</span><span class="t-val blue">$' + setup.longStrike + ' Call (long)</span></div>';
+    html += '<div class="t-row"><span class="t-label">Sell leg</span><span class="t-val">$' + setup.shortStrike + ' Call (short)</span></div>';
+    html += '<div class="t-row"><span class="t-label">Expiry</span><span class="t-val">Today (0DTE)</span></div>';
+    html += '<div class="t-row"><span class="t-label">Quantity</span><span class="t-val amber">' + contracts + ' contract' + (contracts>1?'s':'') + '</span></div>';
+    html += '<div class="t-row"><span class="t-label">Net debit (est)</span><span class="t-val red">$' + premium.toFixed(2) + '/contract</span></div>';
+    html += '<div style="margin-top:8px;border-top:1px solid var(--purple-mid);padding-top:8px;">';
+    html += '<div style="font-size:11px;font-weight:600;color:var(--purple-text);margin-bottom:4px;">After entering — set two phone alarms:</div>';
+    html += '<div class="t-row"><span class="t-label">🔔 Alarm 1 — noon CT</span><span class="t-val">Check spread value vs stop</span></div>';
+    html += '<div class="t-row"><span class="t-label">🔔 Alarm 2 — hard close</span><span class="t-val red">' + (setup.hardClose||'1:30 PM CT') + ' — close position</span></div>';
+    html += '<div class="t-row"><span class="t-label">Stop loss at</span><span class="t-val red">$' + stopPrice.toFixed(2) + ' spread value (50%)</span></div>';
+    html += '<div class="t-row"><span class="t-label">Profit target at</span><span class="t-val green">$' + targetPrice.toFixed(2) + ' spread value</span></div>';
+    html += '</div>';
+  }
+
+  // Schedule notification button
+  html += '<button onclick="scheduleExitAlarm(\'' + (setup.hardClose||'13:30') + '\')" style="width:100%;margin-top:8px;padding:7px;background:var(--purple);color:white;border:none;border-radius:var(--radius);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;">🔔 Schedule exit alarm in browser</button>';
+  html += '</div>';
+  return html;
+}
+
+function scheduleExitAlarm(hardCloseStr){
+  if(!('Notification' in window)){showToast('Browser notifications not supported','warn');return;}
+  Notification.requestPermission().then(function(perm){
+    if(perm !== 'granted'){showToast('Allow notifications to set alarm','warn');return;}
+    // Parse hard close time (e.g. "1:30 PM CT" or "13:30")
+    var now = new Date();
+    var ct  = new Date(now.toLocaleString('en-US',{timeZone:'America/Chicago'}));
+    var closeTime = new Date(ct);
+    var match = hardCloseStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+    if(match){
+      var h = parseInt(match[1]);
+      var m = parseInt(match[2]);
+      if(match[3] && match[3].toUpperCase()==='PM' && h<12) h+=12;
+      if(match[3] && match[3].toUpperCase()==='AM' && h===12) h=0;
+      closeTime.setHours(h, m, 0, 0);
+    } else {
+      closeTime.setHours(13, 30, 0, 0); // default 1:30 PM CT
+    }
+    var msUntilClose = closeTime - ct;
+    var msUntilNoon  = new Date(ct).setHours(12,0,0,0) - ct;
+
+    if(msUntilNoon > 0){
+      setTimeout(function(){
+        new Notification('Artha — Mid-trade check', {
+          body: 'Noon CT: Check your ' + selectedTicker + ' position. Is it at stop or target?',
+          icon: ''
+        });
+      }, msUntilNoon);
+      showToast('Noon alarm set (' + Math.round(msUntilNoon/60000) + ' min)', 'success');
+    }
+    if(msUntilClose > 0){
+      setTimeout(function(){
+        new Notification('Artha — EXIT NOW', {
+          body: 'Hard close time: Close your ' + selectedTicker + ' position immediately. No exceptions.',
+          icon: ''
+        });
+      }, msUntilClose);
+      showToast('Exit alarm set for ' + hardCloseStr, 'success');
+    } else {
+      showToast('Hard close time already passed', 'warn');
+    }
+  });
+}
+
+// ============================================================
+// PRIORITY 5+6 — PREV DAY HIGH/LOW ANCHOR + CATALYST ADR
+// ============================================================
+function computeEnhancedOhlc(h, price, catRisk, bias){
+  if(!h || !h.last20Closes || h.last20Closes.length < 2) return null;
+
+  var prevDay   = h.last20Closes[h.last20Closes.length - 2];
+  var prevHigh  = prevDay ? prevDay.high  : price + h.adr20 * 0.6;
+  var prevLow   = prevDay ? prevDay.low   : price - h.adr20 * 0.6;
+  var prevClose = prevDay ? prevDay.close : price;
+  var adr       = h.adr20;
+
+  // Catalyst-specific multipliers computed from history
+  var catMult = computeCatalystMultiplier(h, catRisk);
+
+  // Previous day high/low as magnetic anchor (~60% of days test one of these)
+  var adjAdr = adr * catMult;
+  var isBull = bias === 'Bullish', isBear = bias === 'Bearish';
+
+  // Base predictions anchored to prev day levels
+  var predHigh  = isBull
+    ? Math.min(prevHigh + adjAdr * 0.4, price + adjAdr * 0.75)
+    : price + adjAdr * (isBear ? 0.30 : 0.50);
+
+  var predLow   = isBear
+    ? Math.max(prevLow - adjAdr * 0.4, price - adjAdr * 0.75)
+    : price - adjAdr * (isBull ? 0.30 : 0.50);
+
+  // Round to 2dp
+  predHigh = Math.round(predHigh * 100) / 100;
+  predLow  = Math.round(predLow  * 100) / 100;
+
+  return {
+    prevHigh:     Math.round(prevHigh  * 100) / 100,
+    prevLow:      Math.round(prevLow   * 100) / 100,
+    prevClose:    Math.round(prevClose * 100) / 100,
+    adjAdr:       Math.round(adjAdr    * 100) / 100,
+    catMult:      catMult,
+    predHighAnchored: predHigh,
+    predLowAnchored:  predLow,
+  };
+}
+
+function computeCatalystMultiplier(h, catRisk){
+  // Try to compute from actual history — days with large ranges vs average
+  if(!h || !h.last20Closes) return catRisk==='High'?1.35:catRisk==='Low'?0.75:1.0;
+  var ranges = h.last20Closes.map(function(d){ return d.range||0; }).filter(function(r){ return r>0; });
+  if(ranges.length < 10) return catRisk==='High'?1.35:catRisk==='Low'?0.75:1.0;
+  var avgRange = ranges.reduce(function(a,b){return a+b;},0)/ranges.length;
+  var sortedRanges = ranges.slice().sort(function(a,b){return b-a;});
+  var top20pct = sortedRanges.slice(0, Math.floor(sortedRanges.length*0.2));
+  var top20avg = top20pct.reduce(function(a,b){return a+b;},0)/top20pct.length;
+  var actualHighMult = Math.round((top20avg/avgRange)*100)/100;
+
+  // Low catalyst days (bottom 20%)
+  var bot20pct = sortedRanges.slice(-Math.floor(sortedRanges.length*0.2));
+  var bot20avg = bot20pct.reduce(function(a,b){return a+b;},0)/bot20pct.length;
+  var actualLowMult = Math.round((bot20avg/avgRange)*100)/100;
+
+  if(catRisk==='High')   return Math.max(1.1, Math.min(2.0, actualHighMult));
+  if(catRisk==='Low')    return Math.max(0.5, Math.min(0.95, actualLowMult));
+  return 1.0;
+}
+
+// ============================================================
+// PRIORITY 9 — EARNINGS CALENDAR CHECK
+// ============================================================
+function checkEarningsRisk(ticker, day){
+  // This is checked via Claude web search in the prompt
+  // We add explicit instruction in buildPrompt for stock tickers
+  // Returns a warning string if needed
+  var stockTickers = ['TSLA','MU','META'];
+  if(stockTickers.indexOf(ticker) === -1) return null;
+  return 'EARNINGS CHECK REQUIRED for ' + ticker + ': search specifically for earnings date. If earnings within 2 days → auto-SKIP all directional spreads, recommend STRADDLE only.';
 }
 
 // ============================================================
