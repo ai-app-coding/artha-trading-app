@@ -1206,6 +1206,36 @@ function updateStatus(msg){
   console.log('[Artha]',msg);
 }
 
+// ── SETUP SCORE WIDGET ───────────────────────────────────────────────────
+function renderSetupScore(score, label, ev) {
+  var s = parseFloat(score) || 0;
+  var col = s >= 7 ? 'var(--green-text)' : s >= 5 ? 'var(--amber-text)' : 'var(--red-text)';
+  var bg  = s >= 7 ? 'var(--green-light)' : s >= 5 ? 'var(--amber-light)' : 'var(--red-light)';
+  var bd  = s >= 7 ? 'var(--green-mid)'   : s >= 5 ? 'var(--amber-mid)'   : 'var(--red-mid)';
+  var tier= s >= 8 ? 'High conviction' : s >= 7 ? 'Strong setup' : s >= 5 ? 'Moderate — reduce size' : s >= 3 ? 'Weak — consider skipping' : 'Very weak — skip';
+  var pct = Math.round((s/10)*100);
+  var evTxt = ev !== null && ev !== undefined ? ' · EV: ' + (parseFloat(ev) >= 0 ? '+' : '') + parseFloat(ev).toFixed(2) + ' per $1 risked' : '';
+  return '<div style="margin-top:8px;padding:8px 10px;background:' + bg + ';border:1px solid ' + bd + ';border-radius:var(--radius);display:flex;align-items:center;gap:10px;">'
+    + '<div style="font-size:24px;font-weight:700;color:' + col + ';min-width:36px;">' + s.toFixed(1) + '</div>'
+    + '<div style="flex:1;">'
+    + '<div style="font-size:10px;font-weight:600;color:' + col + ';text-transform:uppercase;letter-spacing:.07em;">Setup score / 10 — ' + tier + evTxt + '</div>'
+    + '<div style="height:5px;background:var(--border);border-radius:3px;margin:4px 0;overflow:hidden;"><div style="width:' + pct + '%;height:100%;background:' + col + ';border-radius:3px;"></div></div>'
+    + '<div style="font-size:11px;color:var(--text2);">' + (label||'') + '</div>'
+    + '</div></div>';
+}
+
+function renderBearCases(bearCases) {
+  if(!bearCases || !bearCases.length) return '';
+  return '<div style="background:var(--red-light);border:1.5px solid var(--red-mid);border-radius:var(--radius-lg);padding:12px 14px;margin-bottom:10px;">'
+    + '<div style="font-size:11px;font-weight:700;color:var(--red-text);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;">⚠ Why this trade could fail — exit conditions</div>'
+    + bearCases.map(function(bc, i) {
+        return '<div style="display:flex;gap:8px;padding:5px 0;border-bottom:.5px solid var(--red-mid);font-size:12px;color:var(--text);">'
+          + '<span style="color:var(--red-text);font-weight:600;flex-shrink:0;">' + (i+1) + '.</span>'
+          + '<span>' + bc + '</span></div>';
+      }).join('')
+    + '</div>';
+}
+
 // ── RENDER 3 SETUPS TAB ──────────────────────────────────────────────────
 function renderSetupsTab(d, inputs) {
   if(!d.setups || !d.setups.length) {
@@ -1253,6 +1283,17 @@ function renderSetupsTab(d, inputs) {
     html += '<div class="metric"><div class="m-label">R:R</div><div class="m-val green">'+s.rr+'</div></div>';
     html += '</div>';
 
+    // Per-setup score
+    if(s.setupScore) {
+      html += renderSetupScore(s.setupScore, s.whyThisRank, null);
+    }
+
+    // Bear case for this setup
+    if(s.bearCase) {
+      html += '<div style="background:var(--red-light);border:1px solid var(--red-mid);border-radius:var(--radius);padding:7px 10px;margin:6px 0;font-size:11px;color:var(--red-text);">'
+        + '<strong>Exit immediately if:</strong> ' + s.bearCase + '</div>';
+    }
+
     // Rules
     html += '<div style="font-size:12px;">';
     html += '<div class="t-row"><span class="t-label">Entry when</span><span class="t-val" style="font-size:11px;text-align:right;max-width:200px;">'+s.entryCondition+'</span></div>';
@@ -1267,6 +1308,10 @@ function renderSetupsTab(d, inputs) {
 
     // Add Robinhood order card for top GO setup only
     if(i === 0 && (s.verdict === 'GO' || s.verdict === 'WAIT')){
+      // Add overall bear cases before order card
+      if(d.bearCases && d.bearCases.length) {
+        html += renderBearCases(d.bearCases);
+      }
       html += renderRobinhoodCard(s, inputs, isCash);
     }
   });
@@ -1486,10 +1531,16 @@ function extractPartialJson(raw) {
       try { return JSON.parse('['+m[1]+']'); } catch(e) { return []; }
     };
     const verdict = get('verdict') || 'WAIT';
+    const scoreMatch = raw.match(/"setupScore"\s*:\s*([\d.]+)/);
+    const evMatch    = raw.match(/"expectedValue"\s*:\s*([-\d.]+)/);
     return {
       verdict,
       verdictTitle: get('verdictTitle') || 'Analysis complete',
       verdictSub: get('verdictSub') || 'Results retrieved — some formatting was adjusted.',
+      setupScore: scoreMatch ? parseFloat(scoreMatch[1]) : null,
+      setupScoreLabel: get('setupScoreLabel') || null,
+      bearCases: [],
+      expectedValue: evMatch ? parseFloat(evMatch[1]) : null,
       trade: {
         strategy: get('strategy') || 'Bull call spread',
         longStrike: parseFloat(raw.match(/"longStrike"\s*:\s*(\d+)/)?.[1]) || 0,
@@ -1587,12 +1638,29 @@ Escape apostrophes with backslash. No trailing commas. All strings on one line.
 REQUIREMENTS:
 1. Use web_search for current ${d.ticker} news on ${d.day}
 2. Rank 3 strategies by confidence (0-100): Bull Call Spread, Bear Put Spread, Straddle
-3. Provide ohlcBias (Bullish/Bearish/Neutral), ohlcReasoning (2 sentences on today direction), and ohlcKeyLevel (most important price level to watch).
+3. Score overall setup quality 1.0-10.0 (setupScore). Use this rubric:
+   9-10: Perfect alignment — all 7 frameworks agree, high catalyst clarity, strong trend
+   7-8:  Strong setup — 5-6 frameworks agree, clear direction, manageable risk
+   5-6:  Moderate — mixed signals, some uncertainty, trade with reduced size
+   3-4:  Weak — more frameworks disagree than agree, unclear catalyst
+   1-2:  Very weak — avoid entirely
+4. List 3 specific bear cases — concrete conditions that would INVALIDATE the trade
+5. Calculate expected value: (winRate × avgWin) - (lossRate × avgLoss) where avgWin=maxProfit, avgLoss=maxLoss
+6. Provide ohlcBias, ohlcReasoning, ohlcKeyLevel
 
 {
   "verdict": "GO or WAIT or SKIP",
   "verdictTitle": "reason for top setup",
   "verdictSub": "one sentence",
+  "setupScore": 7.2,
+  "setupScoreLabel": "one sentence explaining what drives this score",
+  "bearCases": [
+    "specific condition that invalidates setup e.g. IWM breaks below $282 in first 15 min",
+    "second risk e.g. VIX spikes above 22",
+    "third risk e.g. catalyst surprise reverses morning trend"
+  ],
+  "expectedValue": 0.65,
+
 
   "ohlcBias": "Bullish or Bearish or Neutral",
   "ohlcReasoning": "2 sentences explaining predicted price direction for today based on all indicators",
@@ -1617,7 +1685,11 @@ REQUIREMENTS:
       "stopRule": "string",
       "profitTarget": "string",
       "hardClose": "HH:MM AM/PM CT",
-      "whyThisRank": "one sentence"
+      "whyThisRank": "one sentence",
+      "setupScore": 7.2,
+      "bearCase": "specific condition that invalidates this setup",
+      "setupScore": 7.2,
+      "bearCase": "one specific condition that invalidates this particular setup"
     },
     {
       "rank": 2,
@@ -1637,7 +1709,11 @@ REQUIREMENTS:
       "stopRule": "string",
       "profitTarget": "string",
       "hardClose": "HH:MM AM/PM CT",
-      "whyThisRank": "one sentence"
+      "whyThisRank": "one sentence",
+      "setupScore": 4.5,
+      "bearCase": "specific condition that invalidates this setup",
+      "setupScore": 4.5,
+      "bearCase": "one specific condition that invalidates this setup"
     },
     {
       "rank": 3,
@@ -1657,7 +1733,11 @@ REQUIREMENTS:
       "stopRule": "string",
       "profitTarget": "string",
       "hardClose": "HH:MM AM/PM CT",
-      "whyThisRank": "one sentence"
+      "whyThisRank": "one sentence",
+      "setupScore": 3.0,
+      "bearCase": "specific condition that invalidates this setup",
+      "setupScore": 3.0,
+      "bearCase": "one specific condition that invalidates this setup"
     }
   ],
 
@@ -1695,6 +1775,10 @@ function renderResults(d,inputs){
   d.ohlcBias=d.ohlcBias||null;
   d.ohlcReasoning=d.ohlcReasoning||null;
   d.ohlcKeyLevel=d.ohlcKeyLevel||null;
+  d.setupScore=d.setupScore||null;
+  d.setupScoreLabel=d.setupScoreLabel||null;
+  d.bearCases=d.bearCases||[];
+  d.expectedValue=d.expectedValue||null;
   d.metrics=d.metrics||{};
   d.news=d.news||[];
   d.frameworks=d.frameworks||[];
@@ -1714,6 +1798,7 @@ function renderResults(d,inputs){
       <div class="v-body">
         <div class="v-title">${d.verdictTitle||''}</div>
         <div class="v-sub">${d.verdictSub||''}</div>
+        ${d.setupScore ? renderSetupScore(d.setupScore, d.setupScoreLabel, d.expectedValue) : ''}
       </div>
       <div class="v-time">${now} CT</div>
     </div>
