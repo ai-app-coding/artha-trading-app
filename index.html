@@ -656,6 +656,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
       <button class="btn btn-ghost btn-sm" style="width:100%;font-size:10px;" onclick="clearHistCache()">✕ Clear cache &amp; reload</button>
     </div>
 
+    <!-- Hidden inputs for backward compat — values set by advanced fields -->
+    <input type="hidden" id="ivRank" value=""/>
+    <input type="hidden" id="esOvernight" value=""/>
+
     <!-- ── ANALYZE BUTTON ─────────────────────────────────── -->
     <div class="s-section" style="border:none;">
       <button class="analyze-btn" id="analyzeBtn" onclick="runAnalysis()">✦ Analyze Now</button>
@@ -828,7 +832,7 @@ function onEmChange(){
 }
 
 function onPriceChange(){
-  const p=parseFloat(document.getElementById('price').value);
+  const p=parseFloat(document.getElementById('price')?.value);
   if(!p||isNaN(p)){clearHints();return;}
   const atm=Math.round(p);
   // Spread width: stocks get wider suggestions based on price level
@@ -973,7 +977,7 @@ function initTickerSelector(){
     selectedTicker=btn.dataset.ticker;
     document.getElementById('tickerLabel').textContent=selectedTicker;
     clearHints();
-    document.getElementById('price').value='';
+    document.getElementById('price').value = '';
     // Clear cached hist data when switching tickers so it reloads for new ticker
     window._arthaHist=null;
     const histStatus=document.getElementById('histStatus');
@@ -991,17 +995,17 @@ function initTickerSelector(){
 // API KEY
 // ============================================================
 function saveApiKey(){
-  const k=document.getElementById('apiKeyInput').value.trim();
+  const k=document.getElementById('apiKeyInput')?.value.trim();
   if(!k.startsWith('sk-ant')){alert('API key should start with sk-ant-');return;}
   apiKey=k; localStorage.setItem('artha_apikey',k); checkApiKey();
-  document.getElementById('apiKeyInput').value='';
+  document.getElementById('apiKeyInput').value = '';
   showToast('API key saved successfully','success');
 }
 function saveTdKey(){
-  const k = document.getElementById('tdKeyInput') && document.getElementById('tdKeyInput').value.trim();
+  const k = document.getElementById('tdKeyInput') && document.getElementById('tdKeyInput')?.value.trim();
   if(!k){ alert('Paste your Twelve Data API key first'); return; }
   localStorage.setItem('artha_tdkey', k);
-  document.getElementById('tdKeyInput').value='';
+  document.getElementById('tdKeyInput').value = '';
   showToast('Twelve Data key saved — loading data...', 'success');
   loadHistoricalData(true);
 }
@@ -1018,10 +1022,10 @@ function clearHistCache(){
 }
 
 function saveAvKey(){
-  const k = document.getElementById('avKeyInput') && document.getElementById('avKeyInput').value.trim();
+  const k = document.getElementById('avKeyInput') && document.getElementById('avKeyInput')?.value.trim();
   if(!k){ alert('Paste your Alpha Vantage API key first'); return; }
   localStorage.setItem('artha_avkey', k);
-  document.getElementById('avKeyInput').value='';
+  document.getElementById('avKeyInput').value = '';
   showToast('Alpha Vantage key saved — loading data...', 'success');
   loadHistoricalData(true);
 }
@@ -1079,8 +1083,8 @@ async function animateLoading(){
 // ============================================================
 async function runAnalysis(){
   if(!apiKey){alert('Please enter your Anthropic API key first.');return;}
-  const price=parseFloat(document.getElementById('price').value);
-  const vix=parseFloat(document.getElementById('vix').value);
+  const price=parseFloat(document.getElementById('price')?.value);
+  const vix=parseFloat(document.getElementById('vix')?.value);
   if(!price||!vix){alert('Please enter at least the price and VIX.');return;}
 
   // Check capital protection rules BEFORE running analysis
@@ -1095,7 +1099,7 @@ async function runAnalysis(){
     }
   }
 
-  const ivRank=parseFloat(document.getElementById('ivRank').value)||null;
+  const ivRank=parseFloat(document.getElementById('ivRank')?.value)||null;
   const lb=parseFloat(document.getElementById('longBid')?.value)||null;
   const la=parseFloat(document.getElementById('longAsk')?.value)||null;
   const sb=parseFloat(document.getElementById('shortBid')?.value)||null;
@@ -1109,8 +1113,8 @@ async function runAnalysis(){
   const longStrike=atm, shortStrike=atm+spreadWidth;
   const maxProfit=netDebit?Math.round((spreadWidth-netDebit)*100):null;
   const maxLoss=netDebit?Math.round(netDebit*100):null;
-  const accountSize=parseFloat(document.getElementById('accountSize').value)||10000;
-  const riskPct=parseFloat(document.getElementById('riskPct').value)||2;
+  const accountSize=parseFloat(document.getElementById('accountSize')?.value)||10000;
+  const riskPct=parseFloat(document.getElementById('riskPct')?.value)||2;
   const maxRiskDollars=accountSize*(riskPct/100);
   const maxContracts=netDebit?Math.max(1,Math.floor(maxRiskDollars/(netDebit*100))):null;
 
@@ -2995,7 +2999,7 @@ function renderHistTab() {
 }
 
 function renderScenarioGrid(h) {
-  const price = parseFloat(document.getElementById('price') && document.getElementById('price').value) || h.currentClose;
+  const price = parseFloat(document.getElementById('price') && document.getElementById('price')?.value) || h.currentClose;
   const emInput = document.getElementById('estimatedMove');
   const em = (emInput && parseFloat(emInput.value)) || h.adr20;
   const emLabel = (emInput && parseFloat(emInput.value)) ? 'EM' : 'ADR';
