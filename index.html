@@ -485,24 +485,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
   <!-- SIDEBAR -->
   <div class="sidebar">
 
-    <!-- COLOR LEGEND -->
-    <div class="s-section s-gray" style="padding-bottom:10px;">
-      <div class="legend">
-        <div class="legend-item"><div class="legend-dot" style="background:var(--blue);"></div>Market data</div>
-        <div class="legend-item"><div class="legend-dot" style="background:var(--teal);"></div>AI output</div>
-        <div class="legend-item"><div class="legend-dot" style="background:var(--green);"></div>Go / profit</div>
-        <div class="legend-item"><div class="legend-dot" style="background:var(--amber);"></div>Caution</div>
-        <div class="legend-item"><div class="legend-dot" style="background:var(--red);"></div>Skip / loss</div>
-        <div class="legend-item"><div class="legend-dot" style="background:var(--purple);"></div>Journal</div>
-      </div>
-    </div>
-
-    <!-- TICKER + DAY — blue group -->
+    <!-- ── TICKER + DAY ───────────────────────────────────── -->
     <div class="s-section s-blue">
       <div class="s-head">
-        <div class="s-icon">
-          <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        </div>
+        <div class="s-icon"><svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
         <div class="s-title">Ticker & Day</div>
         <div class="mode-pill pre" id="modeBadge">PRE-MARKET</div>
       </div>
@@ -516,157 +502,164 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
         <div class="ticker-btn" data-ticker="MU">MU</div>
         <div class="ticker-btn" data-ticker="META">META</div>
       </div>
-      <div class="day-grid" id="dayGrid">
-        <!-- populated dynamically by buildWeekDays() -->
-      </div>
-      <div style="margin-top:8px;">
-        <div class="mode-desc" id="modeDesc">Pre-market mode — enter price + VIX for directional prep.</div>
-      </div>
+      <div class="day-grid" id="dayGrid"><!-- populated by buildWeekDays() --></div>
+      <div style="margin-top:6px;"><div class="mode-desc" id="modeDesc">Pre-market mode.</div></div>
     </div>
 
-    <!-- MARKET DATA — blue group -->
+    <!-- ── DAILY INPUTS — 3 required fields ──────────────── -->
     <div class="s-section s-blue">
       <div class="s-head">
-        <div class="s-icon">
-          <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
-        </div>
+        <div class="s-icon"><svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>
         <div class="s-title">Live Market Data</div>
+        <span style="font-size:9px;font-weight:600;padding:2px 7px;border-radius:8px;background:var(--blue-light);color:var(--blue-text);">3 fields only</span>
       </div>
       <div class="inp-group">
         <div class="inp-row">
-          <div class="inp-label"><span id="tickerLabel">IWM</span> price <span class="inp-hint" id="strikeHint"></span></div>
-          <input class="inp" id="price" placeholder="e.g. 278.42" type="number" step="0.01" oninput="onPriceChange()"/>
-        </div>
-        <div class="inp-2col">
-          <div class="inp-row">
-            <div class="inp-label">VIX</div>
-            <input class="inp" id="vix" placeholder="e.g. 17.23" type="number" step="0.01"/>
+          <div class="inp-label">
+            <span id="tickerLabel">IWM</span> price
+            <span class="inp-hint" id="strikeHint"></span>
           </div>
-          <div class="inp-row">
-            <div class="inp-label">IV Rank <span style="font-size:9px;color:var(--text3);">0–100</span></div>
-            <input class="inp" id="ivRank" placeholder="e.g. 35" type="number" step="1" min="0" max="100"/>
+          <input class="inp" id="price" placeholder="e.g. 284.50" type="number" step="0.01" oninput="onPriceChange()"/>
+        </div>
+        <div class="inp-row">
+          <div class="inp-label">VIX <span id="vixAutoTag" style="font-size:9px;font-weight:600;color:var(--teal-text);"></span></div>
+          <div style="display:flex;gap:5px;align-items:center;">
+            <input class="inp" id="vix" placeholder="auto-fetching..." type="number" step="0.01" style="flex:1;"/>
+            <button onclick="fetchVix()" style="padding:7px 9px;background:var(--teal-light);border:1px solid var(--teal-mid);border-radius:var(--radius);font-size:10px;font-weight:600;color:var(--teal-text);cursor:pointer;white-space:nowrap;flex-shrink:0;">↻ VIX</button>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- OPTION LEGS — blue group -->
+    <!-- ── OPTION LEGS ────────────────────────────────────── -->
     <div class="s-section s-blue" id="optionLegsSection">
       <div class="s-head">
-        <div class="s-icon">
-          <svg viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
-        </div>
+        <div class="s-icon"><svg viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></svg></div>
         <div class="s-title">Option Legs</div>
         <span style="font-size:10px;color:var(--text3);margin-left:auto;" id="suggestedStrikes"></span>
       </div>
       <div class="inp-group">
         <div class="inp-row">
-          <div class="inp-label">Long call bid / ask <span class="inp-hint" id="longStrikeLabel"></span></div>
+          <div class="inp-label">Buy call bid / ask <span class="inp-hint" id="longStrikeLabel"></span></div>
           <div class="inp-2col">
             <input class="inp" id="longBid" placeholder="bid" type="number" step="0.01" oninput="calcDebit()"/>
             <input class="inp" id="longAsk" placeholder="ask" type="number" step="0.01" oninput="calcDebit()"/>
           </div>
         </div>
         <div class="inp-row">
-          <div class="inp-label">Short call bid / ask <span class="inp-hint" id="shortStrikeLabel"></span></div>
+          <div class="inp-label">Sell call bid / ask <span class="inp-hint" id="shortStrikeLabel"></span></div>
           <div class="inp-2col">
             <input class="inp" id="shortBid" placeholder="bid" type="number" step="0.01" oninput="calcDebit()"/>
             <input class="inp" id="shortAsk" placeholder="ask" type="number" step="0.01" oninput="calcDebit()"/>
           </div>
         </div>
         <div class="inp-row">
-          <div class="inp-label" style="color:var(--teal-text);">Net debit <span style="font-size:9px;font-weight:400;">(auto-calculated)</span></div>
+          <div class="inp-label" style="color:var(--teal-text);">Net debit (auto-calculated)</div>
           <div class="inp-computed" id="netDebitDisplay">—</div>
         </div>
       </div>
     </div>
 
-    <!-- ACCOUNT — teal group -->
+    <!-- ── ADVANCED (collapsed) ───────────────────────────── -->
     <div class="s-section s-teal">
-      <div class="s-head">
-        <div class="s-icon">
-          <svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
-        </div>
-        <div class="s-title">Account & Risk</div>
+      <div class="s-head" onclick="toggleAdvanced()" style="cursor:pointer;">
+        <div class="s-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/></svg></div>
+        <div class="s-title">Advanced</div>
+        <span id="advToggleIcon" style="margin-left:auto;font-size:12px;color:var(--text3);">▸ expand</span>
       </div>
-      <div class="inp-group">
-        <div class="inp-2col">
+      <div id="advancedFields" style="display:none;">
+        <div class="inp-group">
           <div class="inp-row">
-            <div class="inp-label">Account ($)</div>
-            <input class="inp" id="accountSize" placeholder="10000" type="number" step="100" value="10000"/>
+            <div class="inp-label">Estimated Move $ <span style="font-size:9px;color:var(--text3);">(from options chain)</span></div>
+            <input class="inp" id="estimatedMove" placeholder="e.g. 4.50" type="number" step="0.10" oninput="onEmChange()"/>
           </div>
           <div class="inp-row">
-            <div class="inp-label">Risk (%)</div>
-            <input class="inp" id="riskPct" placeholder="2" type="number" step="0.5" value="2"/>
+            <div class="inp-label">9:45 AM price <span style="font-size:9px;font-weight:600;color:var(--teal-text);">after open → better close</span></div>
+            <input class="inp" id="price945" placeholder="e.g. 285.20" type="number" step="0.01" oninput="onPrice945Change()"/>
           </div>
+          <div id="orNote" style="display:none;font-size:10px;border-radius:var(--radius);padding:5px 8px;margin-top:2px;line-height:1.5;"></div>
         </div>
-
-        <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-            <div>
-              <div style="font-size:11px;font-weight:600;color:var(--text);">Cash account mode</div>
-              <div style="font-size:10px;color:var(--text3);">Naked calls — works in Robinhood today</div>
-            </div>
-            <div id="cashToggle" onclick="toggleCashMode()" style="width:40px;height:22px;border-radius:11px;background:var(--border2);cursor:pointer;position:relative;transition:background .2s;flex-shrink:0;">
-              <div id="cashToggleDot" style="width:18px;height:18px;border-radius:50%;background:white;position:absolute;top:2px;left:2px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.2);"></div>
-            </div>
-          </div>
-          <div id="cashModeNote" style="display:none;background:var(--amber-light);border:1px solid var(--amber-mid);border-radius:var(--radius);padding:6px 10px;font-size:11px;color:var(--amber-text);margin-bottom:8px;">
-            Cash mode ON — recommendations switch to naked long calls. Max loss = full premium. Works with Robinhood Level 2.
-          </div>
-        </div>
-
-        <div style="border-top:1px solid var(--border);padding-top:10px;">
-          <div class="inp-label" style="margin-bottom:4px;">Min confidence to trade <span id="confGateVal" style="color:var(--teal-text);font-weight:700;">55%</span></div>
-          <input type="range" id="confGate" min="30" max="80" value="55" step="5" style="width:100%;accent-color:var(--teal);cursor:pointer;" oninput="document.getElementById('confGateVal').textContent=this.value+'%'"/>
-          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);margin-top:1px;"><span>30%</span><span>55% default</span><span>80%</span></div>
-        </div>
-
-        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:6px;">
-          <div class="inp-label" style="margin-bottom:4px;">Weekly loss limit ($) <span id="weeklyLossStatus" style="font-size:10px;"></span></div>
-          <input class="inp" id="weeklyLimit" placeholder="500" type="number" step="50" value="500" style="font-size:12px;padding:6px 10px;"/>
-          <div style="font-size:10px;color:var(--text3);margin-top:2px;">Auto-SKIP when weekly P&L loss hits this</div>
-        </div>
-
       </div>
     </div>
 
-    <!-- ANALYZE BUTTON -->
-    <div class="s-section" style="border:none;">
-      <button class="analyze-btn" id="analyzeBtn" onclick="runAnalysis()">
-        ✦ Analyze Now
-      </button>
-      <div class="s-section s-teal" style="border-bottom:none;">
-        <div class="s-head">
-          <div class="s-icon">
-            <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-          </div>
-          <div class="s-title">Historical Data</div>
-          <div class="pill" id="histStatus" style="margin-left:auto;background:var(--bg);border:1px solid var(--border);color:var(--text3);font-size:9px;padding:2px 6px;">Not loaded</div>
-        </div>
-        <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:6px;" onclick="loadHistoricalData(true)" id="histBtn">
-          ↓ Load IWM History (2yr)
-        </button>
-        <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:4px;font-size:10px;" onclick="clearHistCache()">
-          ✕ Clear cache &amp; reload fresh
-        </button>
-        <div class="inp-row" style="margin-bottom:6px;">
-          <div class="inp-label" style="font-size:9px;">Twelve Data API key <span style="color:var(--teal-text);font-size:8px;">free at twelvedata.com</span></div>
-          <div style="display:flex;gap:4px;">
-            <input class="inp" id="tdKeyInput" placeholder="paste key here" style="font-size:11px;padding:5px 8px;" type="password"/>
-            <button class="btn btn-ghost btn-sm" style="padding:5px 8px;font-size:10px;white-space:nowrap;" onclick="saveTdKey()">Save</button>
-          </div>
-        </div>
-        <div class="inp-row" style="margin-top:4px;">
-          <div class="inp-label" style="font-size:9px;">Alpha Vantage key <span style="color:var(--teal-text);font-size:8px;">free at alphavantage.co</span></div>
-          <div style="display:flex;gap:4px;">
-            <input class="inp" id="avKeyInput" placeholder="paste key here" style="font-size:11px;padding:5px 8px;" type="password"/>
-            <button class="btn btn-ghost btn-sm" style="padding:5px 8px;font-size:10px;white-space:nowrap;" onclick="saveAvKey()">Save</button>
-          </div>
-        </div>
-        <div style="font-size:10px;color:var(--text3);line-height:1.5;margin-top:4px;">Get either key free — no credit card. Twelve Data recommended (800 calls/day).</div>
+    <!-- ── SETTINGS (collapsed) ───────────────────────────── -->
+    <div class="s-section s-teal">
+      <div class="s-head" onclick="toggleSettings()" style="cursor:pointer;">
+        <div class="s-icon"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg></div>
+        <div class="s-title">Account & Settings</div>
+        <span id="settingsToggleIcon" style="margin-left:auto;font-size:12px;color:var(--text3);">▸ expand</span>
       </div>
-      <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;" onclick="resetApp()">↺ Reset all fields</button>
+      <div id="settingsFields" style="display:none;">
+        <div class="inp-group">
+          <div class="inp-2col">
+            <div class="inp-row">
+              <div class="inp-label">Account ($)</div>
+              <input class="inp" id="accountSize" placeholder="10000" type="number" step="100" value="10000"/>
+            </div>
+            <div class="inp-row">
+              <div class="inp-label">Risk %</div>
+              <input class="inp" id="riskPct" placeholder="2" type="number" step="0.5" value="2"/>
+            </div>
+          </div>
+
+          <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <div>
+                <div style="font-size:11px;font-weight:600;color:var(--text);">Cash account mode</div>
+                <div style="font-size:10px;color:var(--text3);">Naked calls — Robinhood Level 2</div>
+              </div>
+              <div id="cashToggle" onclick="toggleCashMode()" style="width:40px;height:22px;border-radius:11px;background:var(--border2);cursor:pointer;position:relative;transition:background .2s;flex-shrink:0;">
+                <div id="cashToggleDot" style="width:18px;height:18px;border-radius:50%;background:white;position:absolute;top:2px;left:2px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.2);"></div>
+              </div>
+            </div>
+            <div id="cashModeNote" style="display:none;background:var(--amber-light);border:1px solid var(--amber-mid);border-radius:var(--radius);padding:6px 10px;font-size:11px;color:var(--amber-text);margin-bottom:8px;">
+              Cash mode ON — recommendations switch to naked calls.
+            </div>
+          </div>
+
+          <div style="border-top:1px solid var(--border);padding-top:10px;">
+            <div class="inp-label" style="margin-bottom:4px;">Min confidence <span id="confGateVal" style="color:var(--teal-text);font-weight:700;">55%</span></div>
+            <input type="range" id="confGate" min="30" max="80" value="55" step="5" style="width:100%;accent-color:var(--teal);cursor:pointer;" oninput="document.getElementById('confGateVal').textContent=this.value+'%'"/>
+            <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3);margin-top:1px;"><span>30%</span><span>55%</span><span>80%</span></div>
+          </div>
+
+          <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:6px;">
+            <div class="inp-label" style="margin-bottom:4px;">Weekly loss limit ($)</div>
+            <input class="inp" id="weeklyLimit" placeholder="500" type="number" step="50" value="500" style="font-size:12px;padding:6px 10px;"/>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── HISTORICAL DATA ────────────────────────────────── -->
+    <div class="s-section s-teal">
+      <div class="s-head">
+        <div class="s-icon"><svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+        <div class="s-title">Historical Data</div>
+        <div class="pill" id="histStatus" style="margin-left:auto;background:var(--bg);border:1px solid var(--border);color:var(--text3);font-size:9px;padding:2px 6px;">Not loaded</div>
+      </div>
+      <div class="inp-row" style="margin-bottom:6px;">
+        <div class="inp-label" style="font-size:9px;">Twelve Data API key <span style="color:var(--teal-text);font-size:8px;">free at twelvedata.com</span></div>
+        <div style="display:flex;gap:4px;">
+          <input class="inp" id="tdKeyInput" placeholder="paste key here" style="font-size:11px;padding:5px 8px;" type="password"/>
+          <button class="btn btn-ghost btn-sm" style="padding:5px 8px;font-size:10px;white-space:nowrap;" onclick="saveTdKey()">Save</button>
+        </div>
+      </div>
+      <div class="inp-row" style="margin-bottom:6px;">
+        <div class="inp-label" style="font-size:9px;">Alpha Vantage key <span style="color:var(--teal-text);font-size:8px;">free at alphavantage.co</span></div>
+        <div style="display:flex;gap:4px;">
+          <input class="inp" id="avKeyInput" placeholder="paste key here" style="font-size:11px;padding:5px 8px;" type="password"/>
+          <button class="btn btn-ghost btn-sm" style="padding:5px 8px;font-size:10px;white-space:nowrap;" onclick="saveAvKey()">Save</button>
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:4px;" onclick="loadHistoricalData(true)" id="histBtn">↓ Load History</button>
+      <button class="btn btn-ghost btn-sm" style="width:100%;font-size:10px;" onclick="clearHistCache()">✕ Clear cache &amp; reload</button>
+    </div>
+
+    <!-- ── ANALYZE BUTTON ─────────────────────────────────── -->
+    <div class="s-section" style="border:none;">
+      <button class="analyze-btn" id="analyzeBtn" onclick="runAnalysis()">✦ Analyze Now</button>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;" onclick="resetApp()">↺ Reset</button>
     </div>
 
   </div><!-- /sidebar -->
@@ -767,10 +760,10 @@ window.addEventListener('DOMContentLoaded',()=>{
     }
   });
   loadHistoricalData(false);
-  // Init cash mode toggle
   updateCashToggleUI();
-  // Render protection banner
   renderProtectionBanner();
+  // Auto-fetch VIX after a short delay
+  setTimeout(autoFetchVix, 2000);
 });
 
 // ============================================================
@@ -808,6 +801,24 @@ function updateMarketMode(){
 // ============================================================
 // STRIKE AUTO-SUGGESTION
 // ============================================================
+function onPrice945Change(){
+  var p945 = parseFloat(document.getElementById('price945')?.value);
+  var open  = parseFloat(document.getElementById('price')?.value);
+  var note  = document.getElementById('orNote');
+  if(!p945 || !open || !note) return;
+  var move = Math.round((p945 - open) * 100) / 100;
+  var pct  = Math.round((move / open) * 10000) / 100;
+  var isBearishOpen = p945 < open;
+  var isBullishOpen = p945 > open;
+  note.style.display = 'block';
+  note.style.background = isBearishOpen ? 'var(--red-light)' : isBullishOpen ? 'var(--green-light)' : 'var(--bg)';
+  note.style.border = '1px solid ' + (isBearishOpen ? 'var(--red-mid)' : isBullishOpen ? 'var(--green-mid)' : 'var(--border)');
+  note.style.color = isBearishOpen ? 'var(--red-text)' : isBullishOpen ? 'var(--green-text)' : 'var(--text3)';
+  note.textContent = (isBearishOpen ? '↓ Bearish open — price dropped $' + Math.abs(move) + ' (' + pct + '%) in first 15 min. Close likely near low.' :
+    isBullishOpen ? '↑ Bullish open — price up $' + move + ' (' + pct + '%) in first 15 min. Momentum intact.' :
+    'Flat open — no directional signal yet.');
+}
+
 function onEmChange(){
   const em = parseFloat(document.getElementById('estimatedMove')?.value);
   const price = parseFloat(document.getElementById('price')?.value);
@@ -1114,6 +1125,7 @@ async function runAnalysis(){
 
   const estimatedMove = parseFloat(document.getElementById('estimatedMove')?.value)||null;
   const esOvernight   = parseFloat(document.getElementById('esOvernight')?.value)||null;
+  const price945      = parseFloat(document.getElementById('price945')?.value)||null;
 
   // Build scenario grid verdict to feed into Claude
   let scenarioVerdict = null;
@@ -1139,7 +1151,7 @@ async function runAnalysis(){
   const earningsRisk = checkEarningsRisk(selectedTicker, selectedDay);
   const isCashAccount = cashMode;
   const protection2 = getCapitalProtectionStatus();
-  const prompt=buildPrompt({ticker:selectedTicker,day:selectedDay,price,vix,ivRank,longStrike,shortStrike,netDebit,maxProfit,maxLoss,maxContracts,accountSize,riskPct,maxRiskDollars,isPreMarket,hasLegs,journalSummary,estimatedMove,esOvernight,scenarioVerdict,earningsRisk,isCashAccount,consecLoss:protection2.consecLoss,weekPnl:protection2.weekPnl});
+  const prompt=buildPrompt({ticker:selectedTicker,day:selectedDay,price,vix,ivRank,longStrike,shortStrike,netDebit,maxProfit,maxLoss,maxContracts,accountSize,riskPct,maxRiskDollars,isPreMarket,hasLegs,journalSummary,estimatedMove,esOvernight,price945,scenarioVerdict,earningsRisk,isCashAccount,consecLoss:protection2.consecLoss,weekPnl:protection2.weekPnl});
 
   try {
     updateStatus('Calling Claude API...');
@@ -1342,6 +1354,19 @@ function renderOhlcTab(d, inputs) {
   var catRisk = d.metrics && d.metrics.catalystRisk;
   var adr     = h ? h.adr20 : pr * 0.012;
 
+  // Gap detection — if user entered 9:45 AM price, use it to adjust predictions
+  var price945val = parseFloat(document.getElementById('price945')?.value) || null;
+  var gapFromOpen = price945val ? (price945val - pr) : 0;
+  var gapPct      = pr > 0 ? (gapFromOpen / pr) * 100 : 0;
+  var isBearishOR = price945val && price945val < pr; // bearish opening range
+  var isBullishOR = price945val && price945val > pr;
+
+  // If significant gap exists (>0.5%), adjust bias accordingly
+  if(Math.abs(gapPct) > 0.5) {
+    if(isBearishOR) { isBear = true; isBull = false; }
+    if(isBullishOR) { isBull = true; isBear = false; }
+  }
+
   // Priority 5+6: use enhanced OHLC with prev day anchor + catalyst multipliers
   var enhanced = h ? computeEnhancedOhlc(h, pr, catRisk, bias) : null;
   var catMult  = enhanced ? enhanced.catMult : (catRisk==='High'?1.35:catRisk==='Low'?0.75:1.0);
@@ -1415,8 +1440,16 @@ function renderOhlcTab(d, inputs) {
   // Header bias card
   html += '<div class="card card-' + biasColor + '" style="margin-bottom:10px;">';
   html += '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">';
+  // Gap adjustment note
+  var gapNote = '';
+  if(Math.abs(gapPct) > 0.5) {
+    gapNote = isBearishOR
+      ? ' · ↓ Bearish OR — close weighted toward low'
+      : ' · ↑ Bullish OR — momentum intact';
+  }
+
   html += '<div style="flex:1;">';
-  html += '<div style="font-size:11px;color:var(--text3);margin-bottom:2px;">Today OHLC forecast · ' + (inputs.ticker||selectedTicker) + ' · ' + selectedDay + (catRisk==='High'?' · ⚡ High catalyst day':'') + '</div>';
+  html += '<div style="font-size:11px;color:var(--text3);margin-bottom:2px;">Today OHLC forecast · ' + (inputs.ticker||selectedTicker) + ' · ' + selectedDay + (catRisk==='High'?' · ⚡ High catalyst day':'') + gapNote + '</div>';
   html += '<div style="font-size:17px;font-weight:600;color:var(--text);">' + bias + ' bias · Expected range $' + expectedRange.toFixed(2) + '</div>';
   html += '<div style="font-size:12px;color:var(--text2);margin-top:5px;line-height:1.5;">' + reasoning + '</div>';
   if(h && catRisk==='High') html += '<div style="font-size:11px;color:var(--amber-text);margin-top:4px;">⚡ Catalyst day — range expanded ' + Math.round((catMult-1)*100) + '% from base ADR</div>';
@@ -1616,6 +1649,7 @@ ${d.hasLegs?`- Net debit: $${d.netDebit?.toFixed(2)}/contract\n- Max profit: $${
 - Account: $${d.accountSize} | Risk: ${d.riskPct}% = $${d.maxRiskDollars} max${d.maxContracts?`\n- Max safe contracts: ${d.maxContracts}`:''}
 ${d.estimatedMove ? '- Estimated Move (EM): $'+d.estimatedMove+' — bull target $'+(d.price+d.estimatedMove).toFixed(2)+' / bear target $'+(d.price-d.estimatedMove).toFixed(2) : '- Estimated Move: not provided'}
 ${d.esOvernight !== null ? '- ES futures overnight: '+(d.esOvernight>0?'+':'')+d.esOvernight+'% ('+(d.esOvernight>0.2?'BULLISH pre-market signal':d.esOvernight<-0.2?'BEARISH pre-market signal':'neutral')+')' : '- ES futures overnight: not provided'}
+${d.price945 ? '- 9:45 AM price: $'+d.price945+' (moved '+(d.price945>d.price?'+':'')+Math.round((d.price945-d.price)*100)/100+' from open). '+(d.price945<d.price?'BEARISH opening range — weight close prediction toward LOW end':d.price945>d.price?'BULLISH opening range — momentum intact':'Flat open') : '- 9:45 AM price: not provided (use price as open)'}
 ${d.scenarioVerdict ? '- SCENARIO GRID RESULT: '+d.scenarioVerdict : ''}
 ${d.isCashAccount ? '- ACCOUNT TYPE: CASH ACCOUNT — trader cannot trade spreads. All 3 setups MUST be naked long calls or puts only. No spreads.' : '- ACCOUNT TYPE: Margin account — spreads available.'}
 ${d.earningsRisk ? '- '+d.earningsRisk : ''}
@@ -3271,6 +3305,60 @@ function checkEarningsRisk(ticker, day){
   var stockTickers = ['TSLA','MU','META'];
   if(stockTickers.indexOf(ticker) === -1) return null;
   return 'EARNINGS CHECK REQUIRED for ' + ticker + ': search specifically for earnings date. If earnings within 2 days → auto-SKIP all directional spreads, recommend STRADDLE only.';
+}
+
+// ============================================================
+// SIDEBAR COLLAPSE HELPERS
+// ============================================================
+function toggleAdvanced(){
+  var el = document.getElementById('advancedFields');
+  var icon = document.getElementById('advToggleIcon');
+  if(!el) return;
+  var open = el.style.display === 'block';
+  el.style.display = open ? 'none' : 'block';
+  if(icon) icon.textContent = open ? '▸ expand' : '▾ collapse';
+}
+
+function toggleSettings(){
+  var el = document.getElementById('settingsFields');
+  var icon = document.getElementById('settingsToggleIcon');
+  if(!el) return;
+  var open = el.style.display === 'block';
+  el.style.display = open ? 'none' : 'block';
+  if(icon) icon.textContent = open ? '▸ expand' : '▾ collapse';
+}
+
+// ============================================================
+// AUTO-FETCH VIX
+// ============================================================
+async function fetchVix(){
+  const tag = document.getElementById('vixAutoTag');
+  if(tag) tag.textContent = 'fetching...';
+  try {
+    // Use Twelve Data to fetch VIX
+    const tdKey = localStorage.getItem('artha_tdkey') || '479f7bf68cd442c9945176141de92e92';
+    const url = 'https://api.twelvedata.com/price?symbol=VIX&apikey=' + tdKey;
+    const r = await fetch(url);
+    const d = await r.json();
+    if(d.price) {
+      const vix = parseFloat(d.price).toFixed(2);
+      document.getElementById('vix').value = vix;
+      if(tag) { tag.textContent = '✓ auto'; tag.style.color = 'var(--teal-text)'; }
+      showToast('VIX fetched: ' + vix, 'success');
+    } else {
+      throw new Error('No price returned');
+    }
+  } catch(e) {
+    if(tag) { tag.textContent = ''; }
+    showToast('VIX fetch failed — enter manually from Google', 'warn');
+    console.warn('[Artha] VIX fetch failed:', e.message);
+  }
+}
+
+// Auto-fetch VIX on load if hist data is available
+function autoFetchVix(){
+  const vixEl = document.getElementById('vix');
+  if(vixEl && !vixEl.value) fetchVix();
 }
 
 // ============================================================
