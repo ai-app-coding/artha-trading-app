@@ -1287,12 +1287,45 @@ function renderSetupsTab(d, inputs) {
     html += '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;font-weight:500;">Confidence</div>';
     html += confBar(s.confidence);
 
-    // Trade details grid
-    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin:10px 0;">';
-    html += '<div class="metric"><div class="m-label">Buy strike</div><div class="m-val blue">$'+s.longStrike+'</div></div>';
-    html += '<div class="metric"><div class="m-label">Sell strike</div><div class="m-val">$'+s.shortStrike+'</div></div>';
-    html += '<div class="metric"><div class="m-label">Net debit</div><div class="m-val red">'+(s.netDebit?'$'+parseFloat(s.netDebit).toFixed(2):'Est')+'</div></div>';
-    html += '<div class="metric"><div class="m-label">R:R</div><div class="m-val green">'+s.rr+'</div></div>';
+    // Strategy type badge
+    var stColor = s.strategyType==='Credit'?'green':s.strategyType==='Volatility'?'amber':'blue';
+    html += '<div style="margin:6px 0;"><span class="tag '+stColor+'" style="font-size:10px;">'+(s.strategyType||'Debit')+' strategy</span></div>';
+
+    // Trade details — adapt to strategy type
+    var isCondor   = s.strategy && (s.strategy.includes('Condor') || s.strategy.includes('Butterfly'));
+    var isVol      = s.strategy && (s.strategy.includes('Straddle') || s.strategy.includes('Strangle'));
+    var isNaked    = s.strategy && (s.strategy.includes('Naked'));
+    var isCredit   = s.strategy && s.strategy.includes('Credit');
+    var net        = s.netCredit > 0 ? s.netCredit : s.netDebit;
+    var netLabel   = s.netCredit > 0 ? 'Net credit' : 'Net debit';
+    var netColor   = s.netCredit > 0 ? 'green' : 'red';
+
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0;">';
+
+    if(isCondor) {
+      html += '<div class="metric"><div class="m-label">Call short/long</div><div class="m-val blue" style="font-size:14px;">$'+(s.callShortStrike||s.shortStrike||'—')+'/$'+(s.callLongStrike||s.longStrike||'—')+'</div></div>';
+      html += '<div class="metric"><div class="m-label">Put short/long</div><div class="m-val blue" style="font-size:14px;">$'+(s.putShortStrike||'—')+'/$'+(s.putLongStrike||'—')+'</div></div>';
+      html += '<div class="metric"><div class="m-label">Max profit zone</div><div class="m-val green" style="font-size:13px;">$'+(s.breakevenLow||'—')+' – $'+(s.breakevenHigh||'—')+'</div></div>';
+      html += '<div class="metric"><div class="m-label">'+netLabel+'</div><div class="m-val '+netColor+'">'+(net?'$'+parseFloat(net).toFixed(2):'—')+'</div></div>';
+    } else if(isVol) {
+      html += '<div class="metric"><div class="m-label">Call strike</div><div class="m-val blue">$'+(s.callLongStrike||s.longStrike||'—')+'</div></div>';
+      html += '<div class="metric"><div class="m-label">Put strike</div><div class="m-val blue">$'+(s.putLongStrike||s.longStrike||'—')+'</div></div>';
+      html += '<div class="metric"><div class="m-label">Total debit</div><div class="m-val red">'+(net?'$'+parseFloat(net).toFixed(2):'—')+'</div></div>';
+      html += '<div class="metric"><div class="m-label">Break above/below</div><div class="m-val amber" style="font-size:13px;">$'+(s.breakevenHigh||'—')+'/$'+(s.breakevenLow||'—')+'</div></div>';
+    } else if(isNaked) {
+      html += '<div class="metric"><div class="m-label">Strike</div><div class="m-val blue">$'+(s.callLongStrike||s.longStrike||'—')+'</div></div>';
+      html += '<div class="metric"><div class="m-label">Premium</div><div class="m-val red">'+(net?'$'+parseFloat(net).toFixed(2):'—')+'</div></div>';
+      html += '<div class="metric"><div class="m-label">Breakeven</div><div class="m-val amber">$'+(s.breakevenLow||s.breakevenHigh||'—')+'</div></div>';
+      html += '<div class="metric"><div class="m-label">Max profit</div><div class="m-val green">Unlimited</div></div>';
+    } else {
+      // Standard spread (debit or credit)
+      var buyStrike  = s.callLongStrike  || s.longStrike  || '—';
+      var sellStrike = s.callShortStrike || s.shortStrike || '—';
+      html += '<div class="metric"><div class="m-label">'+(isCredit?'Short':'Buy')+'</div><div class="m-val blue">$'+sellStrike+'</div></div>';
+      html += '<div class="metric"><div class="m-label">'+(isCredit?'Long':'Sell')+'</div><div class="m-val">$'+buyStrike+'</div></div>';
+      html += '<div class="metric"><div class="m-label">'+netLabel+'</div><div class="m-val '+netColor+'">'+(net?'$'+parseFloat(net).toFixed(2):'—')+'</div></div>';
+      html += '<div class="metric"><div class="m-label">R:R</div><div class="m-val green">'+s.rr+'</div></div>';
+    }
     html += '</div>';
 
     // Per-setup score
@@ -1671,16 +1704,52 @@ Escape apostrophes with backslash. No trailing commas. All strings on one line.
 
 REQUIREMENTS:
 1. Use web_search for current ${d.ticker} news on ${d.day}
-2. Rank 3 strategies by confidence (0-100): Bull Call Spread, Bear Put Spread, Straddle
-3. Score overall setup quality 1.0-10.0 (setupScore). Use this rubric:
-   9-10: Perfect alignment — all 7 frameworks agree, high catalyst clarity, strong trend
-   7-8:  Strong setup — 5-6 frameworks agree, clear direction, manageable risk
-   5-6:  Moderate — mixed signals, some uncertainty, trade with reduced size
-   3-4:  Weak — more frameworks disagree than agree, unclear catalyst
-   1-2:  Very weak — avoid entirely
-4. List 3 specific bear cases — concrete conditions that would INVALIDATE the trade
-5. Calculate expected value: (winRate × avgWin) - (lossRate × avgLoss) where avgWin=maxProfit, avgLoss=maxLoss
+
+2. SELECT THE BEST 3 STRATEGIES for today's specific conditions from this full menu:
+
+   DIRECTIONAL (price must move your way):
+   - Bull Call Spread: moderately bullish, defined risk, needs price to reach short strike
+   - Bear Put Spread: moderately bearish, defined risk
+   - Naked Long Call: strongly bullish + high conviction (8+ score), unlimited upside
+   - Naked Long Put: strongly bearish + high conviction (8+ score)
+
+   PREMIUM COLLECTION (price must stay in range):
+   - Iron Condor: sell OTM call spread + OTM put spread simultaneously. Best on range-bound days (NR7 + neutral MACD + low catalyst). Wins if price stays inside the short strikes.
+   - Iron Butterfly: sell ATM call + ATM put, buy wings. Best on high-IV catalyst days. Collect maximum premium, profit if price barely moves.
+   - Bull Put Credit Spread: sell OTM put spread to collect credit. Bullish bias but wins even if price goes sideways.
+   - Bear Call Credit Spread: sell OTM call spread to collect credit. Bearish bias but wins even if price goes sideways.
+
+   VOLATILITY (profit from big move either way):
+   - Straddle: buy ATM call + ATM put. Best on FOMC/NFP when big move expected but direction unclear.
+   - Strangle: buy OTM call + OTM put. Cheaper than straddle, needs bigger move to profit.
+
+   SELECTION RULES — match strategy to TODAY'S CONDITIONS:
+   - NR7 + neutral MACD + low catalyst → Iron Condor or Iron Butterfly (range play)
+   - Strong trend + MACD crossover + NR7 breakout → Naked Long Call/Put (conviction play)
+   - FOMC/NFP + BB squeeze + high IV → Straddle or Strangle (volatility play)
+   - Bullish but uncertain magnitude → Bull Call Spread or Bull Put Credit Spread
+   - High IV + neutral → Credit spreads (Iron Condor preferred)
+   - Gap-up + bearish opening range → Bear Put Spread or Bear Call Credit Spread
+
+3. Score overall setup quality 1.0-10.0 (setupScore):
+   9-10: Perfect — all frameworks agree, clear catalyst, strong trend
+   7-8:  Strong — 5-6 frameworks agree, manageable risk
+   5-6:  Moderate — mixed signals, reduce size
+   3-4:  Weak — more frameworks disagree, consider skipping
+   1-2:  Very weak — skip
+
+4. List 3 specific bearCases that would INVALIDATE the top setup
+
+5. Calculate expectedValue = (estimatedWinRate × avgWin) - ((1-estimatedWinRate) × avgLoss)
+
 6. Provide ohlcBias, ohlcReasoning, ohlcKeyLevel
+
+IMPORTANT FOR STRIKE SELECTION:
+- Iron Condor: provide both call spread strikes AND put spread strikes
+- Iron Butterfly: provide ATM strike for both short legs + wing strikes
+- Straddle/Strangle: provide single ATM strike (or OTM strikes for strangle)
+- Credit spreads: short strike is OTM (above for calls, below for puts)
+- ${d.isCashAccount ? 'CASH ACCOUNT: Only Naked Long Call or Naked Long Put allowed' : 'MARGIN ACCOUNT: All strategies available'}
 
 {
   "verdict": "GO or WAIT or SKIP",
@@ -1700,78 +1769,91 @@ REQUIREMENTS:
   "ohlcReasoning": "2 sentences explaining predicted price direction for today based on all indicators",
   "ohlcKeyLevel": "the single most important price level to watch today e.g. $279.50",
 
+
   "setups": [
     {
       "rank": 1,
       "confidence": 75,
-      "strategy": "Bull Call Spread",
-      "direction": "Bullish",
+      "strategy": "SELECT BEST: Bull Call Spread / Bear Put Spread / Naked Long Call / Naked Long Put / Iron Condor / Iron Butterfly / Bull Put Credit Spread / Bear Call Credit Spread / Straddle / Strangle",
+      "direction": "Bullish or Bearish or Neutral",
+      "strategyType": "Debit or Credit or Volatility",
       "verdict": "GO or WAIT or SKIP",
-      "longStrike": ${d.longStrike},
-      "shortStrike": ${d.shortStrike},
+      "callLongStrike": ${d.longStrike},
+      "callShortStrike": ${d.shortStrike},
+      "putLongStrike": 0,
+      "putShortStrike": 0,
       "netDebit": ${d.netDebit!=null?d.netDebit.toFixed(2):0},
+      "netCredit": 0,
       "maxProfit": ${d.maxProfit||0},
       "maxLoss": ${d.maxLoss||0},
-      "breakeven": 0.00,
+      "breakevenLow": 0.00,
+      "breakevenHigh": 0.00,
       "rr": "1:X",
       "contracts": ${d.maxContracts||1},
       "entryCondition": "string",
       "stopRule": "string",
       "profitTarget": "string",
       "hardClose": "HH:MM AM/PM CT",
-      "whyThisRank": "one sentence",
+      "whyThisRank": "why this strategy fits today conditions specifically",
       "setupScore": 7.2,
       "bearCase": "specific condition that invalidates this setup",
-      "setupScore": 7.2,
-      "bearCase": "one specific condition that invalidates this particular setup"
+      "robinhoodSteps": "1. Open Robinhood. 2. Trade Options. 3. ..."
     },
     {
       "rank": 2,
       "confidence": 45,
-      "strategy": "Bear Put Spread",
-      "direction": "Bearish",
+      "strategy": "SELECT SECOND BEST from menu",
+      "direction": "Bullish or Bearish or Neutral",
+      "strategyType": "Debit or Credit or Volatility",
       "verdict": "WAIT or SKIP",
-      "longStrike": ${d.longStrike},
-      "shortStrike": ${d.longStrike-4},
+      "callLongStrike": ${d.longStrike},
+      "callShortStrike": ${d.shortStrike},
+      "putLongStrike": 0,
+      "putShortStrike": 0,
       "netDebit": 0,
+      "netCredit": 0,
       "maxProfit": 0,
       "maxLoss": 0,
-      "breakeven": 0.00,
+      "breakevenLow": 0.00,
+      "breakevenHigh": 0.00,
       "rr": "1:X",
       "contracts": ${d.maxContracts||1},
       "entryCondition": "string",
       "stopRule": "string",
       "profitTarget": "string",
       "hardClose": "HH:MM AM/PM CT",
-      "whyThisRank": "one sentence",
+      "whyThisRank": "why this ranks second today",
       "setupScore": 4.5,
-      "bearCase": "specific condition that invalidates this setup",
-      "setupScore": 4.5,
-      "bearCase": "one specific condition that invalidates this setup"
+      "bearCase": "specific condition that invalidates this",
+      "robinhoodSteps": "1. Open Robinhood. 2. ..."
     },
     {
       "rank": 3,
       "confidence": 30,
-      "strategy": "Straddle",
-      "direction": "Neutral",
+      "strategy": "SELECT THIRD BEST from menu",
+      "direction": "Bullish or Bearish or Neutral",
+      "strategyType": "Debit or Credit or Volatility",
       "verdict": "SKIP",
-      "longStrike": ${d.longStrike},
-      "shortStrike": ${d.longStrike},
+      "callLongStrike": ${d.longStrike},
+      "callShortStrike": ${d.longStrike},
+      "putLongStrike": 0,
+      "putShortStrike": 0,
       "netDebit": 0,
+      "netCredit": 0,
       "maxProfit": 0,
       "maxLoss": 0,
-      "breakeven": 0.00,
+      "breakevenLow": 0.00,
+      "breakevenHigh": 0.00,
       "rr": "1:X",
       "contracts": 1,
       "entryCondition": "string",
       "stopRule": "string",
       "profitTarget": "string",
       "hardClose": "HH:MM AM/PM CT",
-      "whyThisRank": "one sentence",
+      "whyThisRank": "why this ranks third today",
       "setupScore": 3.0,
-      "bearCase": "specific condition that invalidates this setup",
-      "setupScore": 3.0,
-      "bearCase": "one specific condition that invalidates this setup"
+      "bearCase": "specific condition that invalidates this",
+      "robinhoodSteps": "1. Open Robinhood. 2. ..."
     }
   ],
 
@@ -3130,6 +3212,20 @@ function getAutoSkipOverride(){
 // PRIORITY 4 — ROBINHOOD ORDER CARD + BROWSER NOTIFICATIONS
 // ============================================================
 function renderRobinhoodCard(setup, inputs, isCash){
+  // If Claude provided explicit steps, use those
+  if(setup.robinhoodSteps && setup.robinhoodSteps.length > 20 && !setup.robinhoodSteps.includes('Step 1: Open Robinhood. 2. ...')) {
+    var stepsHtml = setup.robinhoodSteps.split(/\d+\./).filter(Boolean).map(function(s,i){
+      return '<div style="display:flex;gap:8px;padding:5px 0;border-bottom:.5px solid var(--purple-mid);font-size:12px;color:var(--text);">'
+        +'<span style="color:var(--purple-text);font-weight:600;flex-shrink:0;">'+(i+1)+'.</span>'
+        +'<span>'+s.trim()+'</span></div>';
+    }).join('');
+    return '<div class="card" style="border:1.5px solid var(--purple-mid);background:var(--purple-light);margin-top:0;">'
+      +'<div class="card-head"><div class="card-icon" style="background:var(--purple-light);"><svg viewBox="0 0 24 24" stroke="var(--purple)" fill="none" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg></div>'
+      +'<div class="card-title" style="color:var(--purple-text);">How to place in Robinhood</div></div>'
+      + stepsHtml
+      +'<button onclick="doAlarm(this)" data-close="'+(setup.hardClose||'13:30')+'" style="width:100%;margin-top:8px;padding:7px;background:var(--purple);color:white;border:none;border-radius:var(--radius);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;">🔔 Schedule exit alarm</button>';
+      +'</div>';
+  }
   var premium    = setup.netDebit > 0 ? parseFloat(setup.netDebit) : (inputs.netDebit || 0);
   var contracts  = setup.contracts || inputs.maxContracts || 1;
   var stopPrice  = Math.round(premium * 0.5 * 100) / 100;
@@ -3174,11 +3270,12 @@ function renderRobinhoodCard(setup, inputs, isCash){
   }
 
   // Schedule notification button
-  html += '<button onclick="scheduleExitAlarm(\'' + (setup.hardClose||'13:30') + '\')" style="width:100%;margin-top:8px;padding:7px;background:var(--purple);color:white;border:none;border-radius:var(--radius);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;">🔔 Schedule exit alarm in browser</button>';
+      +'<button onclick="doAlarm(this)" data-close="'+(setup.hardClose||'13:30')+'" style="width:100%;margin-top:8px;padding:7px;background:var(--purple);color:white;border:none;border-radius:var(--radius);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;">🔔 Schedule exit alarm</button>';
   html += '</div>';
   return html;
 }
 
+function doAlarm(btn){ scheduleExitAlarm(btn.dataset.close||'13:30'); }
 function scheduleExitAlarm(hardCloseStr){
   if(!('Notification' in window)){showToast('Browser notifications not supported','warn');return;}
   Notification.requestPermission().then(function(perm){
